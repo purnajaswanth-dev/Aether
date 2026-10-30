@@ -1,0 +1,95 @@
+package com.context_platform.aether;
+
+import com.context_platform.aether.artifact.ArtifactResponse;
+import com.context_platform.aether.artifact.CreateArtifactRequest;
+import com.context_platform.aether.auth.AuthResponse;
+import com.context_platform.aether.auth.RegisterRequest;
+import com.context_platform.aether.common.ProjectAccessDeniedException;
+import com.context_platform.aether.project.CreateProjectRequest;
+import com.context_platform.aether.project.ProjectResponse;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+public class RowLevelSecurityIsolationTest extends BaseTest {
+
+    @Test
+    @DisplayName("Gate 3: Cross-project isolation enforced under RLS and API service layer (User A cannot access User B's project)")
+    void testCrossProjectIsolation() {
+        rlsContextHelper.setBypassRls(true);
+
+        // 1. Create User A and Project A
+        AuthResponse userA = authService.register(
+            new RegisterRequest("user_a_" + UUID.randomUUID() + "@team.com", "Password123!", "User Alpha"),
+            "127.0.0.1", "JUnit"
+        );
+        ProjectResponse projectA = projectService.createProject(
+            new CreateProjectRequest("Project Alpha", "Project A details", "Monolith", List.of("Java"), null, "LOCAL_FIRST"),
+            userA.user().id(),
+            userA.user().email()
+        );
+
+        // 2. Create User B and Project B
+        AuthResponse userB = authService.register(
+            new RegisterRequest("user_b_" + UUID.randomUUID() + "@team.com", "Password123!", "User Beta"),
+            "127.0.0.1", "JUnit"
+        );
+        ProjectResponse projectB = projectService.createProject(
+            new CreateProjectRequest("Project Beta", "Project B details", "Microservices", List.of("Go"), null, "LOCAL_FIRST"),
+            userB.user().id(),
+            userB.user().email()
+        );
+
+        // 3. User A creates an artifact in Project A
+        ArtifactResponse artifactA = artifactService.createArtifact(
+            projectA.id(),
+            new CreateArtifactRequest("Project A Secret Arch", "ARCHITECTURE", "MANUAL", null, "Secret Arch A", "v1"),
+            userA.user().id()
+        );
+
+        // 4. User B attempts to access Project A via Service / API -> Must throw ProjectAccessDeniedException
+        assertThatThrownBy(() -> {
+            projectService.getProject(projectA.id(), userB.user().id());
+        }).isInstanceOf(ProjectAccessDeniedException.class);
+
+        assertThatThrownBy(() -> {
+            artifactService.getLatest(projectA.id(), artifactA.id(), userB.user().id());
+        }).isInstanceOf(ProjectAccessDeniedException.class);
+
+        // 5. Test direct PostgreSQL Row-Level Security (RLS) enforcement
+        // Switch session to non-superuser application role with NOBYPASSRLS
+        jdbcClient.sql("SET ROLE aether_app").update();
+        try {
+            // Set RLS context to Project B
+            rlsContextHelper.setBypassRls(false);
+            rlsContextHelper.setProjectContext(projectB.id());
+
+            // A query on artifacts under Project B context returns 0 rows for Project A
+            List<UUID> visibleArtifacts = jdbcClient.sql("SELECT id FROM artifacts WHERE project_id = ?")
+                .param(projectA.id())
+                .query(UUID.class)
+                .list();
+
+            assertThat(visibleArtifacts).isEmpty(); // Zero rows visible under RLS!
+
+            // Attempting to INSERT a record with project_id = projectA while in Project B context violates RLS
+            assertThatThrownBy(() -> {
+                jdbcClient.sql("""
+                    INSERT INTO artifacts (id, project_id, title, source_platform, artifact_type, created_at)
+                    VALUES (gen_random_uuid(), ?, 'Sneaky Insertion', 'MANUAL', 'ARCHITECTURE', now())
+                """)
+                .param(projectA.id())
+                .update();
+            }).isInstanceOf(Exception.class);
+        } finally {
+            jdbcClient.sql("RESET ROLE").update();
+            rlsContextHelper.setBypassRls(true);
+        }
+    }
+}

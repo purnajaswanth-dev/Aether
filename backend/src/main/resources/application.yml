@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: aether
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aether}
+    username: ${SPRING_DATASOURCE_USERNAME:aether}
+    password: ${SPRING_DATASOURCE_PASSWORD:aether_dev_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+aether:
+  security:
+    jwt:
+      secret: ${AETHER_JWT_SECRET:4f5bd5aethersecretkeyforphaseonefoundationsmustbe256bitslong!}
+      expiration-ms: 86400000 # 24 hours
+  storage:
+    local-path: ${AETHER_STORAGE_PATH:./data/artifacts}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
