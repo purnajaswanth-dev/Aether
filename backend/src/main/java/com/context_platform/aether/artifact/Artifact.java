@@ -13,3 +13,4 @@ public record Artifact(
     UUID relatedTaskId,
     Instant createdAt
 ) {}
+

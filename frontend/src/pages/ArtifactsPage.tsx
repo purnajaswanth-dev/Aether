@@ -547,3 +547,4 @@ export function ArtifactsPage() {
     </div>
   );
 }
+

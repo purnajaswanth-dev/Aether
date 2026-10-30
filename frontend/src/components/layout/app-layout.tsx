@@ -134,3 +134,4 @@ export function AppLayout({ userEmail, onLogout, projectName }: AppLayoutProps) 
     </div>
   );
 }
+

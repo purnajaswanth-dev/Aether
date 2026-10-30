@@ -4,3 +4,4 @@ public record AuthResponse(
     UserDto user,
     String token
 ) {}
+

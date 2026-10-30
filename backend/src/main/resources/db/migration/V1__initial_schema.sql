@@ -214,3 +214,4 @@ CREATE TABLE audit_events (
 
 CREATE INDEX idx_audit_events_user ON audit_events(user_id, created_at DESC);
 CREATE INDEX idx_audit_events_project ON audit_events(project_id, created_at DESC);
+

@@ -109,3 +109,4 @@ public class LocalStorageService implements StorageService {
         return filename.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
 }
+

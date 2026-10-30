@@ -36,3 +36,4 @@ cd backend && mvn clean compile -DskipTests && cd ..
 echo "=== Setup complete! ==="
 echo "Run backend: cd backend && mvn spring-boot:run"
 echo "Run frontend: cd frontend && npm run dev"
+

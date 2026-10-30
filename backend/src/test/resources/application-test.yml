@@ -16,3 +16,4 @@ aether:
       expiration-ms: 86400000
   storage:
     local-path: ./target/test-data/artifacts
+

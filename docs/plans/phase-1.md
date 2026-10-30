@@ -170,3 +170,4 @@ public interface StorageService {
 6. Timeline contains an event for every state change with all required fields.
 7. No fake data or simulated integration status exists in production code paths.
 8. Clean builds for Maven and npm, all tests passing.
+

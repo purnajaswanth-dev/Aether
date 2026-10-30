@@ -40,3 +40,4 @@ export function Breadcrumbs({ projectName }: { projectName?: string }) {
     </nav>
   );
 }
+

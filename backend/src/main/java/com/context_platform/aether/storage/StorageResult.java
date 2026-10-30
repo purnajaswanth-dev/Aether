@@ -5,3 +5,4 @@ public record StorageResult(
     String contentHash,
     long byteSize
 ) {}
+

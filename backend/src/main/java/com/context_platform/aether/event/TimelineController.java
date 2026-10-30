@@ -41,3 +41,4 @@ public class TimelineController {
         return ResponseEntity.ok(timelineService.listTimeline(projectId, eventType, platform, limit));
     }
 }
+

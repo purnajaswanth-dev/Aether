@@ -172,3 +172,4 @@ export function Sidebar({ collapsed, onToggleCollapse, userEmail, onLogout }: Si
     </aside>
   );
 }
+

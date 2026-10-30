@@ -12,6 +12,7 @@ public class RlsContextHelper {
 
     private static final Logger log = LoggerFactory.getLogger(RlsContextHelper.class);
     private final JdbcClient jdbcClient;
+    private final ThreadLocal<Boolean> bypassRls = ThreadLocal.withInitial(() -> false);
 
     public RlsContextHelper(JdbcClient jdbcClient) {
         this.jdbcClient = jdbcClient;
@@ -33,7 +34,13 @@ public class RlsContextHelper {
      * Explicitly set RLS bypass flag for administrative transactions (e.g. project creation or user registration).
      */
     public void setBypassRls(boolean bypass) {
+        this.bypassRls.set(bypass);
         jdbcClient.sql("SET LOCAL app.bypass_rls = '" + (bypass ? "on" : "off") + "'").update();
         log.trace("RLS Bypass set to: {}", bypass);
     }
+
+    public boolean isBypassRls() {
+        return Boolean.TRUE.equals(bypassRls.get());
+    }
 }
+

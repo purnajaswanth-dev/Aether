@@ -21,3 +21,4 @@ public record DecisionResponse(
     Instant createdAt,
     Instant updatedAt
 ) {}
+

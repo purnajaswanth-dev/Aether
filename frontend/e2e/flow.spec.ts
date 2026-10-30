@@ -76,3 +76,4 @@ test.describe('End-to-End Acceptance Flow', () => {
     await expect(page.locator('text=DECISION_APPROVED')).toBeVisible();
   });
 });
+

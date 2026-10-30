@@ -707,3 +707,4 @@ export function DecisionsPage() {
     </div>
   );
 }
+

@@ -112,3 +112,4 @@ public class DecisionStateMachineAndActorTest extends BaseTest {
         SecurityContextHolder.getContext().setAuthentication(auth);
     }
 }
+

@@ -13,3 +13,4 @@ public record UserDto(
         return new UserDto(user.id(), user.email(), user.displayName(), user.createdAt());
     }
 }
+

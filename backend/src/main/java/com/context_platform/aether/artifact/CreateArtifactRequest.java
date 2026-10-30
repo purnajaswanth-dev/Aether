@@ -21,3 +21,4 @@ public record CreateArtifactRequest(
 
     String changeSummary
 ) {}
+

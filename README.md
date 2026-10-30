@@ -88,3 +88,4 @@ npm run build
 2. **Strict Actor Governance**: AI agents may propose decisions; only authenticated human users can approve them.
 3. **Optimistic Concurrency**: Technical decisions use atomic version checking to prevent race conditions.
 4. **Product Honesty**: No simulated statuses or fake integration cards; unsupported or upcoming providers truthfully display "Not connected" / "Not available yet".
+

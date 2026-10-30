@@ -17,3 +17,4 @@ public record ArtifactVersion(
     String changeSummary,
     Instant createdAt
 ) {}
+

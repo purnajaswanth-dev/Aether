@@ -18,3 +18,4 @@ public record ErrorResponse(
         return new ErrorResponse(error, message, status, Instant.now(), errors);
     }
 }
+

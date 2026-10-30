@@ -150,3 +150,4 @@ export function AuthPage({ onAuthSuccess, isRegister = false }: AuthPageProps) {
     </div>
   );
 }
+

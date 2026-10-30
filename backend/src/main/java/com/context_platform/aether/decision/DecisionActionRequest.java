@@ -8,3 +8,4 @@ public record DecisionActionRequest(
     UUID linkedDecisionId, // for supersede
     UUID evidenceArtifactVersionId
 ) {}
+

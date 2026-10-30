@@ -23,3 +23,4 @@ public record CreateProjectRequest(
     @Pattern(regexp = "LOCAL_FIRST|CLOUD|HYBRID", message = "Storage preference must be LOCAL_FIRST, CLOUD, or HYBRID")
     String storagePreference
 ) {}
+

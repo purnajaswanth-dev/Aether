@@ -5,6 +5,13 @@ import {
   Artifact,
   ArtifactVersion,
   ArtifactDiffResponse,
+  McpToken,
+  CreateMcpTokenRequest,
+  CreateMcpTokenResponse,
+  McpActivityLog,
+  McpReliabilityReport,
+  McpClientConfig,
+  McpClientPlatform,
   TechnicalDecision,
   DecisionComparison,
   TimelineEvent,
@@ -247,6 +254,51 @@ class ApiClient {
     if (platform) params.append('platform', platform);
     return this.request<TimelineEvent[]>(`/projects/${projectId}/timeline?${params.toString()}`);
   }
+
+  // Model Context Protocol (MCP) Management
+  async listMcpTokens(projectId: string): Promise<McpToken[]> {
+    return this.request<McpToken[]>(`/projects/${projectId}/integrations/mcp/tokens`);
+  }
+
+  async createMcpToken(projectId: string, data: CreateMcpTokenRequest): Promise<CreateMcpTokenResponse> {
+    return this.request<CreateMcpTokenResponse>(`/projects/${projectId}/integrations/mcp/tokens`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async revokeMcpToken(projectId: string, tokenId: string): Promise<void> {
+    return this.request<void>(`/projects/${projectId}/integrations/mcp/tokens/${tokenId}/revoke`, {
+      method: 'POST',
+    });
+  }
+
+  async pauseMcpToken(projectId: string, tokenId: string, paused: boolean): Promise<void> {
+    return this.request<void>(`/projects/${projectId}/integrations/mcp/tokens/${tokenId}/pause?paused=${paused}`, {
+      method: 'POST',
+    });
+  }
+
+  async getMcpActivity(projectId: string, filters?: { limit?: number; offset?: number; status?: string; tool?: string }): Promise<McpActivityLog[]> {
+    const params = new URLSearchParams();
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.offset) params.append('offset', filters.offset.toString());
+    if (filters?.status) params.append('status', filters.status);
+    if (filters?.tool) params.append('tool', filters.tool);
+    return this.request<McpActivityLog[]>(`/projects/${projectId}/integrations/mcp/activity?${params.toString()}`);
+  }
+
+  async getMcpReliability(projectId: string): Promise<McpReliabilityReport> {
+    return this.request<McpReliabilityReport>(`/projects/${projectId}/integrations/mcp/reliability`);
+  }
+
+  async getMcpConfig(projectId: string, platform: McpClientPlatform, baseUrl?: string, token?: string): Promise<McpClientConfig> {
+    const params = new URLSearchParams({ platform });
+    if (baseUrl) params.append('baseUrl', baseUrl);
+    if (token) params.append('token', token);
+    return this.request<McpClientConfig>(`/projects/${projectId}/integrations/mcp/config?${params.toString()}`);
+  }
 }
 
 export const api = new ApiClient();
+

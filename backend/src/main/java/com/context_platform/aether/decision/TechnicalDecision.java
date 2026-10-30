@@ -15,3 +15,4 @@ public record TechnicalDecision(
     Instant createdAt,
     Instant updatedAt
 ) {}
+

@@ -8,3 +8,4 @@ public interface StorageService {
     void verifyIntegrity(UUID projectId, String storageKey, String expectedHash);
     String computeSha256(byte[] content);
 }
+

@@ -45,4 +45,17 @@ public abstract class BaseTest {
     void setUpRls() {
         rlsContextHelper.setBypassRls(true);
     }
+
+    protected com.context_platform.aether.auth.AuthResponse registerUser(String email, String password, String name) {
+        String uniqueEmail = java.util.UUID.randomUUID().toString().substring(0, 8) + "_" + email;
+        return authService.register(new com.context_platform.aether.auth.RegisterRequest(uniqueEmail, password, name), "127.0.0.1", "TestClient");
+    }
+
+    protected com.context_platform.aether.project.ProjectResponse createTestProject(String name, java.util.UUID userId) {
+        return projectService.createProject(
+            new com.context_platform.aether.project.CreateProjectRequest(name, "Test description", "BACKEND", java.util.List.of("Java"), "/workspace/" + name.toLowerCase().replace(" ", "_"), "LOCAL_FIRST"),
+            userId,
+            "OWNER"
+        );
+    }
 }

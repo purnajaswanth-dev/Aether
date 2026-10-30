@@ -137,3 +137,74 @@ export interface TimelineEvent {
   metadata?: string;
   createdAt: string;
 }
+
+export type McpClientPlatform = 'CLAUDE' | 'CHATGPT' | 'ANTIGRAVITY' | 'OTHER';
+
+export interface McpToken {
+  id: string;
+  projectId: string;
+  tokenName: string;
+  clientPlatform: McpClientPlatform;
+  tokenPrefix: string;
+  permissions: string[];
+  isRevoked: boolean;
+  isPaused: boolean;
+  rateLimitPerMinute: number;
+  expiresAt?: string;
+  lastUsedAt?: string;
+  createdAt: string;
+}
+
+export interface CreateMcpTokenRequest {
+  tokenName: string;
+  clientPlatform: McpClientPlatform;
+  permissions: string[];
+  rateLimitPerMinute?: number;
+  expiresAt?: string;
+}
+
+export interface CreateMcpTokenResponse {
+  id: string;
+  projectId: string;
+  tokenName: string;
+  clientPlatform: McpClientPlatform;
+  rawToken: string;
+  tokenPrefix: string;
+  permissions: string[];
+  rateLimitPerMinute: number;
+  expiresAt?: string;
+  createdAt: string;
+}
+
+export interface McpActivityLog {
+  id: string;
+  projectId: string;
+  tokenId?: string;
+  toolName: string;
+  clientPlatform: McpClientPlatform;
+  durationMs: number;
+  status: 'SUCCESS' | 'ERROR' | 'RATE_LIMITED' | 'UNAUTHORIZED';
+  errorMessage?: string;
+  createdAt: string;
+}
+
+export interface McpReliabilityReport {
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  sessionsTracked: number;
+  firstRetrievalBeforeSaveRate: number;
+  saveCompletionRate: number;
+  topToolsCalled: Record<string, number>;
+  platformDistribution: Record<string, number>;
+}
+
+export interface McpClientConfig {
+  platform: string;
+  transport: string;
+  config_file: string;
+  config_snippet: string;
+  rules_file: string;
+  rules_snippet: string;
+}
+

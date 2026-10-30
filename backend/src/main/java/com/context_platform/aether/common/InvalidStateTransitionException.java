@@ -7,3 +7,4 @@ public class InvalidStateTransitionException extends ApiException {
         super(message, HttpStatus.CONFLICT);
     }
 }
+

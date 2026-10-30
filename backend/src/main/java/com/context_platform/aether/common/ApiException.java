@@ -10,7 +10,13 @@ public class ApiException extends RuntimeException {
         this.status = status;
     }
 
+    public ApiException(HttpStatus status, String message) {
+        super(message);
+        this.status = status;
+    }
+
     public HttpStatus getStatus() {
         return status;
     }
 }
+

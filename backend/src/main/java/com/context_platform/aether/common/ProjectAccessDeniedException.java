@@ -7,3 +7,4 @@ public class ProjectAccessDeniedException extends ApiException {
         super(message, HttpStatus.FORBIDDEN);
     }
 }
+

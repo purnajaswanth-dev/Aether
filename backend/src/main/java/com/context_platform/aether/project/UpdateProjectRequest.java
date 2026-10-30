@@ -10,3 +10,4 @@ public record UpdateProjectRequest(
     String directory,
     String storagePreference
 ) {}
+

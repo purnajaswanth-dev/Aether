@@ -60,3 +60,4 @@ function Badge({ className, variant, size, showDot = true, children, ...props }:
 }
 
 export { Badge, badgeVariants };
+

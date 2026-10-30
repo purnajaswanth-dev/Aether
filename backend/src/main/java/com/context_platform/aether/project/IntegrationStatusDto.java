@@ -13,3 +13,4 @@ public record IntegrationStatusDto(
     List<String> plannedCapabilities,
     String statusReason
 ) {}
+

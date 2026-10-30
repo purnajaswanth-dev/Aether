@@ -7,3 +7,4 @@ public class ResourceNotFoundException extends ApiException {
         super(resourceName + " not found with id: " + identifier, HttpStatus.NOT_FOUND);
     }
 }
+

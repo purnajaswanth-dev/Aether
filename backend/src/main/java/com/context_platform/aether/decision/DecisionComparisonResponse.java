@@ -9,3 +9,4 @@ public record DecisionComparisonResponse(
     List<DecisionVersion> modifiedProposals,
     DecisionVersion approvedVersion
 ) {}
+

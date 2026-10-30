@@ -7,3 +7,4 @@ public record DecisionDetailResponse(
     List<DecisionVersion> versions,
     List<DecisionEvidence> evidence
 ) {}
+

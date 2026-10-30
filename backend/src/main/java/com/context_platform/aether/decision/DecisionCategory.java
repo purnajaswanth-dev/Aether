@@ -8,3 +8,4 @@ public enum DecisionCategory {
     INFRASTRUCTURE,
     CONVENTION
 }
+

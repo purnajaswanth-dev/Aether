@@ -54,3 +54,4 @@ READ_PROJECT_CONTEXT, READ_ARTIFACTS, SAVE_ARTIFACTS, RECORD_DECISIONS, READ_DEP
 
 ## DESIGN SYSTEM REFERENCE
 See [docs/DESIGN_SYSTEM.md](DESIGN_SYSTEM.md) for full design system tokens, typography, layout, motion, and accessibility specifications.
+

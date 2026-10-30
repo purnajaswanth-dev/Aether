@@ -15,3 +15,4 @@ public record ArtifactVersionResponse(
     String content, // null for summary list
     Instant createdAt
 ) {}
+

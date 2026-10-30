@@ -40,7 +40,15 @@ public class DecisionService {
     public DecisionResponse createDecision(UUID projectId, CreateDecisionRequest request, UUID userId) {
         securityChecker.verifyProjectAccess(projectId, userId, "MEMBER");
         ActorContext actor = securityChecker.getCurrentActor();
+        return createDecisionInternal(projectId, request, actor);
+    }
 
+    @Transactional
+    public DecisionResponse createDecision(UUID projectId, CreateDecisionRequest request, ActorContext actor) {
+        return createDecisionInternal(projectId, request, actor);
+    }
+
+    private DecisionResponse createDecisionInternal(UUID projectId, CreateDecisionRequest request, ActorContext actor) {
         String publicId = decisionRepository.nextPublicId(projectId);
 
         TechnicalDecision decision = decisionRepository.createDecision(
@@ -426,3 +434,4 @@ public class DecisionService {
         );
     }
 }
+

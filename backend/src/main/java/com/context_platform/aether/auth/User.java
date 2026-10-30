@@ -11,3 +11,4 @@ public record User(
     Instant createdAt,
     Instant updatedAt
 ) {}
+

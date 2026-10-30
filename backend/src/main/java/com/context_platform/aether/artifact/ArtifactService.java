@@ -49,7 +49,15 @@ public class ArtifactService {
     public ArtifactResponse createArtifact(UUID projectId, CreateArtifactRequest request, UUID userId) {
         securityChecker.verifyProjectAccess(projectId, userId, "MEMBER");
         ActorContext actor = securityChecker.getCurrentActor();
+        return createArtifactInternal(projectId, request, actor);
+    }
 
+    @Transactional
+    public ArtifactResponse createArtifact(UUID projectId, CreateArtifactRequest request, ActorContext actor) {
+        return createArtifactInternal(projectId, request, actor);
+    }
+
+    private ArtifactResponse createArtifactInternal(UUID projectId, CreateArtifactRequest request, ActorContext actor) {
         byte[] contentBytes = request.content().getBytes(StandardCharsets.UTF_8);
         String hash = storageService.computeSha256(contentBytes);
         long byteSize = contentBytes.length;
@@ -118,7 +126,15 @@ public class ArtifactService {
     public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request, UUID userId) {
         securityChecker.verifyProjectAccess(projectId, userId, "MEMBER");
         ActorContext actor = securityChecker.getCurrentActor();
+        return createVersionInternal(projectId, artifactId, request, actor);
+    }
 
+    @Transactional
+    public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request, ActorContext actor) {
+        return createVersionInternal(projectId, artifactId, request, actor);
+    }
+
+    private ArtifactVersionResponse createVersionInternal(UUID projectId, UUID artifactId, CreateVersionRequest request, ActorContext actor) {
         Artifact artifact = artifactRepository.findArtifactById(artifactId, projectId)
             .orElseThrow(() -> new ResourceNotFoundException("Artifact", artifactId));
 
@@ -353,7 +369,7 @@ public class ArtifactService {
         );
     }
 
-    private String resolveContentAndVerifyHash(UUID projectId, ArtifactVersion version) {
+    public String resolveContentAndVerifyHash(UUID projectId, ArtifactVersion version) {
         String content;
         if (version.content() != null && !version.content().isBlank()) {
             content = version.content();
@@ -372,3 +388,4 @@ public class ArtifactService {
         return content;
     }
 }
+

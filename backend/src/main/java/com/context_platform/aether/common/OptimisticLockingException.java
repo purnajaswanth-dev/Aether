@@ -7,3 +7,4 @@ public class OptimisticLockingException extends ApiException {
         super(message, HttpStatus.CONFLICT);
     }
 }
+

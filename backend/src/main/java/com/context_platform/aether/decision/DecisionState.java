@@ -9,3 +9,4 @@ public enum DecisionState {
     IMPLEMENTED,
     VERIFIED
 }
+

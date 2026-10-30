@@ -17,3 +17,4 @@ public record ArtifactResponse(
     String content, // null for list summary, present for get
     Instant createdAt
 ) {}
+

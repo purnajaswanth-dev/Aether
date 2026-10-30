@@ -16,3 +16,4 @@ FOR EACH ROW EXECUTE FUNCTION reject_update_delete();
 CREATE TRIGGER trg_immutable_timeline_events
 BEFORE UPDATE OR DELETE ON timeline_events
 FOR EACH ROW EXECUTE FUNCTION reject_update_delete();
+

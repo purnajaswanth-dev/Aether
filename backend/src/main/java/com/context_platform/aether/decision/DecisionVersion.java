@@ -19,3 +19,4 @@ public record DecisionVersion(
     String reviewNotes,
     Instant createdAt
 ) {}
+

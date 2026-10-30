@@ -17,3 +17,4 @@ public class AuditService {
         auditRepository.record(projectId, userId, action, actorType, ipAddress, userAgent, detailsJson);
     }
 }
+

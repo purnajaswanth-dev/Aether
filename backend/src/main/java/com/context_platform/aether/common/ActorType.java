@@ -4,3 +4,4 @@ public enum ActorType {
     HUMAN_USER,
     AGENT
 }
+

@@ -71,3 +71,4 @@ Goal: a calm, professional, dense-but-clean engineering workspace in the spirit 
 ## Primary Navigation Structure
 - Global navigation: Projects, Tasks, Memory, Integrations, Timeline, Artifacts, Settings.
 - Inside a project navigation: Overview, Context, Decisions, Tasks, Activity, Integrations, Deployment.
+

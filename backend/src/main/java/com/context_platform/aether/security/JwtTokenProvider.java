@@ -66,3 +66,4 @@ public class JwtTokenProvider {
         return getClaims(token).get("actorType", String.class);
     }
 }
+

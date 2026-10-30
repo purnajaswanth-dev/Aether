@@ -14,3 +14,4 @@ public record AuditEvent(
     String details,
     Instant createdAt
 ) {}
+

@@ -106,3 +106,4 @@ public class AuthAndProjectServiceTest extends BaseTest {
         }).isInstanceOf(ProjectAccessDeniedException.class);
     }
 }
+

@@ -104,3 +104,4 @@ public class ArtifactController {
         return ResponseEntity.ok(artifactService.compareVersions(projectId, artifactId, v1, v2, principal.id()));
     }
 }
+
