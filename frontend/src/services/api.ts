@@ -39,7 +39,12 @@ import {
   IntegrationHealth,
 } from '@/types';
 
-const BASE_URL = '/api/v1';
+let rawApiUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '').trim();
+if (rawApiUrl && !rawApiUrl.startsWith('http://') && !rawApiUrl.startsWith('https://') && !rawApiUrl.startsWith('/')) {
+  rawApiUrl = `https://${rawApiUrl}`;
+}
+const API_ROOT = rawApiUrl.replace(/\/$/, '');
+const BASE_URL = `${API_ROOT}/api/v1`;
 
 class ApiClient {
   private getToken(): string | null {

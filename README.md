@@ -91,6 +91,23 @@ npm run dev
 
 ---
 
+## 🚀 Cloud Deployment (Render Blueprint)
+
+Aether includes native Infrastructure as Code for **1-click deployment on [Render](https://render.com)** via [`render.yaml`](file:///c:/Users/sunka/OneDrive/coding/Aether/render.yaml):
+
+1. Push your repository to GitHub.
+2. In the [Render Dashboard](https://dashboard.render.com), click **New +** > **Blueprint**.
+3. Select your repository and click **Apply**.
+4. Render provisions:
+   - **`aether-db`**: Managed PostgreSQL 16 with `pgvector`
+   - **`aether-backend`**: Spring Boot 3.3.5 Docker container with health checks and 10GB persistent disk
+   - **`aether-frontend`**: React + Vite SPA on global CDN with SPA rewrites
+   - Auto-generated 256-bit secrets for JWT authentication and credential encryption
+
+For detailed step-by-step instructions, see the complete [Render Deployment Guide](file:///c:/Users/sunka/OneDrive/coding/Aether/docs/deployment/render.md).
+
+---
+
 ## 🧪 Running Automated Test Suites
 
 ### Backend Tests (JUnit 5 + Spring Boot + pgvector)

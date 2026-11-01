@@ -47,8 +47,8 @@ ENV SPRING_PROFILES_ACTIVE=prod \
 EXPOSE 8080
 
 # Health check against Spring Boot Actuator
-HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8080/actuator/health || exit 1
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
+    CMD sh -c 'curl -f http://localhost:${PORT:-8080}/actuator/health || exit 1'
 
 # Production JVM flags tuned for containers (cgroups memory and CPU awareness)
 ENTRYPOINT ["java", \
