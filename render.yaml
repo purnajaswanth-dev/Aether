@@ -13,6 +13,7 @@ services:
   - type: web
     name: aether-backend
     runtime: docker
+    rootDir: backend
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
     plan: starter
