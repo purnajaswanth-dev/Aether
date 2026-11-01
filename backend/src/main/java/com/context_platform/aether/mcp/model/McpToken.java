@@ -33,3 +33,4 @@ public record McpToken(
         return permissions != null && permissions.contains(requiredPermission);
     }
 }
+

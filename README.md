@@ -1,91 +1,128 @@
-# Unified Engineering Context Platform (Aether)
+# Aether — Unified Engineering Context Platform
 
-A project-centric persistent memory and context-exchange layer for software teams.
-One project, one persistent memory, many independent AI agents and engineering tools (ChatGPT, Claude, Google Antigravity, GitHub, Render, Postman, Docker).
-
----
-
-## Architecture & Monorepo Structure
-
-- `/backend`: Spring Boot 3.3.5, Java 17 LTS, Maven, Spring JDBC (`JdbcClient`), Flyway, PostgreSQL 16 with pgvector, Argon2id auth, immutable triggers, Row-Level Security (RLS).
-- `/frontend`: React 18, Vite, TypeScript, Tailwind CSS, Radix UI primitives, TanStack Query, Lucide icons, Vitest, Playwright.
-- `/docs`: Constitutional guidelines (`docs/CONSTITUTION.md`), Design System specifications (`docs/DESIGN_SYSTEM.md`), phase implementation plans, and phase reports.
-- `/scripts`: Automated cross-platform setup scripts (`setup.sh`, `setup.bat`).
-- `docker-compose.yml`: PostgreSQL 16 with pgvector (`pgvector/pgvector:pg16`).
+**Aether** is a project-centric persistent memory, context-orchestration, and workflow-coordination platform for modern engineering teams and autonomous AI agents (Claude, ChatGPT, Google Antigravity, GitHub, Render, Postman, Docker).
 
 ---
 
-## Prerequisites
+## 🚀 Key Capabilities
 
-- **Java 17 (LTS)**: Adoptium Temurin or equivalent
-- **Apache Maven 3.9+**
-- **Node.js 20+** and **npm**
-- **Docker** and **Docker Compose**
+* **Architectural Memory & Artifact Immutability**: Store specifications, architecture decision records (ADRs), and schemas with cryptographic SHA-256 verification and PostgreSQL immutability triggers.
+* **Remote Model Context Protocol (MCP) Server**: Connect independent AI agents via SSE or Streamable HTTP transports with fine-grained capability tokens, instant revocation, pause/resume, and token rotation.
+* **Local In-Process Semantic Search & Hybrid Retrieval**: In-memory Microsoft ONNX Runtime (`all-MiniLM-L6-v2`, 384 dimensions) combined with PostgreSQL `pgvector` and BM25 Reciprocal Rank Fusion (RRF) delivers sub-25ms hybrid queries without external embedding API costs.
+* **Token-Budgeted Context Orchestration**: Assemble model-tailored context packages with strict token ceilings, status-aware re-ranking, and structured fact extraction.
+* **Workflow Coordination & Evidence Gating**: Strict task state machine preventing AI agents from claiming `VERIFIED` status without qualifying passing test execution evidence or explicit human override.
+* **Human-in-the-Loop Approval Inbox**: Safe gating for destructive agent actions (deployments, PR mergers) with JSON parameter inspection, double-click debounce, and explicit `CONFIRM` typing verification.
+* **Production Observability & Enterprise Privacy**: Correlation ID tracing (`X-Correlation-ID`) in MDC and response headers, custom Micrometer metrics, Actuator healthcheck, full project JSON archive export, and GDPR cascading purge.
 
 ---
 
-## Setup & Local Development (Exact Working Commands)
+## 🏗️ Architecture & Monorepo Structure
 
-### 1. Start the PostgreSQL 16 + pgvector Database
-```bash
-docker compose up -d
+```text
+├── backend/                  # Spring Boot 3.3.5 (Java 17 LTS), Maven, PostgreSQL 16 + pgvector, ONNX Runtime
+│   ├── src/main/java/        # Modular monolith (auth, artifact, decision, ingestion, retrieval, mcp, workflow, data, observability)
+│   ├── src/main/resources/   # Flyway migrations (V1–V10), ONNX model, logback configuration
+│   └── Dockerfile            # Multi-stage container build (Temurin 17 JRE, non-root user UID 10001)
+├── frontend/                 # React 18, TypeScript, Vite, Tailwind CSS, Radix UI, TanStack Query, Lucide
+│   ├── src/                  # Web application, approval inbox, shared memory, living design system
+│   ├── nginx.conf            # Hardened Nginx reverse proxy with CSP, HSTS, X-Frame-Options: DENY
+│   └── Dockerfile            # Multi-stage production build (Node 20 -> Nginx 1.27 Alpine)
+├── agent/                    # High-performance Local Agent CLI daemon written in Go
+│   └── ...                   # Codebase scanner, git commit collector, AST parser
+├── docs/                     # Platform Constitution, Design System, STRIDE Threat Model, Verification Reports (Phases 1-6)
+├── docker-compose.yml        # Local development PostgreSQL 16 + pgvector
+├── docker-compose.prod.yml   # Full containerized production stack (PostgreSQL, Backend, Frontend)
+└── .env.example              # Production configuration template
 ```
-Verify the container is healthy:
+
+---
+
+## 🛠️ Prerequisites
+
+* **Java 17 LTS** (Adoptium Eclipse Temurin or equivalent)
+* **Apache Maven 3.9+**
+* **Node.js 20+** & **npm**
+* **Go 1.22+** (optional, for local agent CLI)
+* **Docker Engine 24+** & **Docker Compose v2+**
+
+---
+
+## ⚡ Quickstart: Local Development
+
+### 1. Start PostgreSQL 16 + pgvector
 ```bash
-docker compose ps
+docker compose up -d postgres
 ```
 
-### 2. Start the Backend API (Spring Boot 3.3.5 on port 8080)
+### 2. Start Backend API (Spring Boot on port 8080)
 ```bash
 cd backend
-mvn clean spring-boot:run
+mvn spring-boot:run
 ```
-- OpenAPI Documentation / Swagger UI: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- Actuator Health Endpoint: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
+* **Swagger / OpenAPI Documentation**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+* **Actuator Health Check**: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
 
-### 3. Start the Frontend Dev Server (React 18 / Vite on port 5173)
+### 3. Start Frontend Dev Server (React on port 5173)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-- Web Application: [http://localhost:5173](http://localhost:5173)
-- Living Design System Token Showcase: [http://localhost:5173/design](http://localhost:5173/design)
+* **Web Application**: [http://localhost:5173](http://localhost:5173)
+* **Design System Showcase**: [http://localhost:5173/design](http://localhost:5173/design)
 
 ---
 
-## Running the Automated Test Suites
+## 🐳 Production Deployment (Docker Compose)
 
-### Backend Unit & Integration Tests (JUnit 5, Spring JDBC, PostgreSQL Triggers & RLS)
+1. Create production environment secrets:
+   ```bash
+   cp .env.example .env
+   ```
+2. Build and launch all production services:
+   ```bash
+   docker compose -f docker-compose.prod.yml up --build -d
+   ```
+3. Verify health status:
+   ```bash
+   docker compose -f docker-compose.prod.yml ps
+   ```
+   Access the production portal at **`http://localhost`** (port 80).
+
+---
+
+## 🧪 Running Automated Test Suites
+
+### Backend Tests (JUnit 5 + Spring Boot + pgvector)
 ```bash
 cd backend
 mvn test
 ```
-Tests assert:
-- Immutability database triggers reject `UPDATE` and `DELETE` on `artifact_versions` and `timeline_events`.
-- PostgreSQL Row-Level Security (RLS) guarantees zero cross-project leakage.
-- AI Agents cannot approve decisions (only authenticated human users can approve).
-- Concurrent approval attempts fail safely via optimistic concurrency locking.
-- 50 KB architecture document storage maintains byte-identical SHA-256 integrity on write and read.
-- Login brute-force rate limiter blocks accounts after 5 failed attempts.
+To run the full Phase 6 production hardening and acceptance suite:
+```bash
+cd backend
+mvn test "-Dtest=Phase6ProductionAcceptanceTest,AdversarialCrossProjectSecurityTest,McpTokenHardeningTest,PromptInjectionDefenseTest,ReliabilityAndJobRecoveryTest,PerformanceBenchmarkTest,DataProtectionTest,ObservabilityTest"
+```
 
-### Frontend Component Tests (Vitest + React Testing Library)
+### Frontend Tests (Vitest) & Production Build Check
 ```bash
 cd frontend
 npm run test:run
+npm run build
 ```
 
-### Frontend Production Build
+### Local Agent Go Tests
 ```bash
-cd frontend
-npm run build
+cd agent
+go test ./...
 ```
 
 ---
 
-## Constitutional Guarantees (Phase 1)
-1. **Append-Only Immutability**: Historical events and artifact versions cannot be overwritten or deleted directly in the database.
-2. **Strict Actor Governance**: AI agents may propose decisions; only authenticated human users can approve them.
-3. **Optimistic Concurrency**: Technical decisions use atomic version checking to prevent race conditions.
-4. **Product Honesty**: No simulated statuses or fake integration cards; unsupported or upcoming providers truthfully display "Not connected" / "Not available yet".
+## 📜 Constitutional Principles
 
+1. **Evidence Over Assertion**: Claims of completion or correctness require recorded evidence (passing test executions, verified artifacts, or explicit human justification).
+2. **Strict Actor Governance**: AI agents may propose tasks and architectural decisions; only authenticated human users can approve decisions or authorize destructive actions.
+3. **Data Integrity & Immutability**: Historical events and artifact versions cannot be modified or deleted directly in the database.
+4. **Product Honesty**: No simulated statuses or fake integration cards; unsupported or planned providers truthfully display their actual connection status.
+5. **Zero Tenant Leakage**: Strict project isolation enforced at both the application and database (Row-Level Security) levels.

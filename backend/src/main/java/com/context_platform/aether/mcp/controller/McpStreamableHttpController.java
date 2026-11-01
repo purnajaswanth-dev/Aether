@@ -60,3 +60,4 @@ public class McpStreamableHttpController {
         return ResponseEntity.ok(response);
     }
 }
+

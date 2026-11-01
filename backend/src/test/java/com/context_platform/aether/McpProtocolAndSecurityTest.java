@@ -52,10 +52,10 @@ public class McpProtocolAndSecurityTest extends BaseTest {
     );
 
     @Test
-    @DisplayName("MCP Schema: Exactly 13 tools must be registered with JSON-schema inputs")
+    @DisplayName("MCP Schema: All 28 tools registered with JSON-schema inputs and descriptions")
     void testToolDefinitionsAndSchemas() {
         List<McpToolDefinition> tools = toolRegistry.listToolDefinitions();
-        assertThat(tools).hasSize(13);
+        assertThat(tools).hasSize(28);
 
         List<String> expectedTools = List.of(
             "list_projects",
@@ -70,7 +70,22 @@ public class McpProtocolAndSecurityTest extends BaseTest {
             "save_project_artifact",
             "save_conversation_output",
             "record_decision",
-            "record_review_finding"
+            "record_review_finding",
+            "get_context",
+            "expand_chunk",
+            "get_latest_deployment",
+            "get_deployment_status",
+            "get_deployment_logs",
+            "get_previous_failures",
+            "get_relevant_files",
+            "update_task_status",
+            "record_implementation_result",
+            "record_test_result",
+            "get_task_context",
+            "get_api_contract",
+            "get_project_dependencies",
+            "analyze_change_impact",
+            "get_relevant_tests"
         );
 
         List<String> actualToolNames = tools.stream().map(McpToolDefinition::name).toList();
@@ -106,9 +121,9 @@ public class McpProtocolAndSecurityTest extends BaseTest {
 
         // Test prompts
         var prompts = promptService.listPrompts(token);
-        assertThat(prompts).hasSize(2);
+        assertThat(prompts).hasSize(3);
         assertThat(prompts.stream().map(McpPromptDefinition::name).toList())
-            .contains("review_architecture", "start_implementation");
+            .contains("review_architecture", "start_implementation", "coordinate_task");
 
         var reviewPrompt = promptService.getPrompt("review_architecture", Map.of("focus_area", "security"), token);
         assertThat(reviewPrompt).containsKey("messages");

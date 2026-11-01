@@ -15,6 +15,28 @@ import {
   TechnicalDecision,
   DecisionComparison,
   TimelineEvent,
+  SearchResultItem,
+  ExtractedFact,
+  IngestionJob,
+  SecretFinding,
+  ContextPackageResponse,
+  CapabilityDescriptor,
+  IntegrationSummary,
+  Deployment,
+  AgentDevice,
+  DeadLetterEvent,
+  Task,
+  TaskStatus,
+  TaskEvent,
+  ImplementationRecord,
+  TestExecutionRecord,
+  DebuggingRecord,
+  TaskLink,
+  TaskContext,
+  ActionRequest,
+  AgentHandoff,
+  ChangeImpactResult,
+  IntegrationHealth,
 } from '@/types';
 
 const BASE_URL = '/api/v1';
@@ -50,6 +72,12 @@ class ApiClient {
     });
 
     if (!res.ok) {
+      if (res.status === 401) {
+        this.setToken(null);
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/register')) {
+          window.location.href = '/login?expired=true';
+        }
+      }
       let errorMessage = `API Error ${res.status}`;
       try {
         const errorJson = await res.json();
@@ -102,6 +130,17 @@ class ApiClient {
 
   async getProject(projectId: string): Promise<Project> {
     return this.request<Project>(`/projects/${projectId}`);
+  }
+
+  async exportProject(projectId: string): Promise<any> {
+    return this.request<any>(`/projects/${projectId}/export`);
+  }
+
+  async deleteProject(projectId: string, confirmationCode: string): Promise<{ message: string; projectId: string }> {
+    return this.request<{ message: string; projectId: string }>(`/projects/${projectId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ confirmationCode }),
+    });
   }
 
   async createProject(data: {
@@ -297,6 +336,294 @@ class ApiClient {
     if (baseUrl) params.append('baseUrl', baseUrl);
     if (token) params.append('token', token);
     return this.request<McpClientConfig>(`/projects/${projectId}/integrations/mcp/config?${params.toString()}`);
+  }
+
+  // ==========================================
+  // Phase 3: Extraction, RAG & Orchestrator API
+  // ==========================================
+
+  async searchMemory(projectId: string, query: string, limit: number = 15): Promise<SearchResultItem[]> {
+    const params = new URLSearchParams({ query, limit: limit.toString() });
+    return this.request<SearchResultItem[]>(`/projects/${projectId}/memory/search?${params.toString()}`);
+  }
+
+  async listFacts(
+    projectId: string,
+    category?: string,
+    state?: string,
+    limit: number = 50
+  ): Promise<ExtractedFact[]> {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (category) params.append('category', category);
+    if (state) params.append('state', state);
+    return this.request<ExtractedFact[]>(`/projects/${projectId}/memory/facts?${params.toString()}`);
+  }
+
+  async reviewFact(
+    projectId: string,
+    factId: string,
+    validationState: 'VERIFIED' | 'REJECTED',
+    notes?: string
+  ): Promise<ExtractedFact> {
+    return this.request<ExtractedFact>(`/projects/${projectId}/memory/facts/${factId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ validation_state: validationState, notes }),
+    });
+  }
+
+  async expandChunk(projectId: string, chunkId: string): Promise<{
+    chunk_id: string;
+    artifact_id: string;
+    version: number;
+    parent_section_path: string;
+    chunk_type: string;
+    start_line: number;
+    end_line: number;
+    start_offset: number;
+    end_offset: number;
+    content: string;
+    expanded_view: string;
+  }> {
+    return this.request(`/projects/${projectId}/memory/chunks/${chunkId}/expand`);
+  }
+
+  async listIngestionJobs(projectId: string, limit: number = 20): Promise<IngestionJob[]> {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    return this.request<IngestionJob[]>(`/projects/${projectId}/memory/ingestion-jobs?${params.toString()}`);
+  }
+
+  async retryIngestionJob(projectId: string, jobId: string): Promise<IngestionJob> {
+    return this.request<IngestionJob>(`/projects/${projectId}/memory/ingestion-jobs/${jobId}/retry`, {
+      method: 'POST',
+    });
+  }
+
+  async listSecrets(projectId: string): Promise<SecretFinding[]> {
+    return this.request<SecretFinding[]>(`/projects/${projectId}/memory/secrets`);
+  }
+
+  async previewContextPackage(
+    projectId: string,
+    task: string,
+    targetModel?: string,
+    tokenBudget?: number
+  ): Promise<ContextPackageResponse> {
+    return this.request<ContextPackageResponse>(`/projects/${projectId}/orchestrator/preview`, {
+      method: 'POST',
+      body: JSON.stringify({
+        task,
+        target_model: targetModel,
+        token_budget: tokenBudget,
+      }),
+    });
+  }
+  // ==========================================
+  // Phase 4: Integrations, Deployments & Local Agent
+  // ==========================================
+
+  async getIntegrationCapabilities(projectId: string): Promise<CapabilityDescriptor[]> {
+    return this.request<CapabilityDescriptor[]>(`/projects/${projectId}/integrations/capabilities`);
+  }
+
+  async listProjectIntegrations(projectId: string): Promise<IntegrationSummary[]> {
+    return this.request<IntegrationSummary[]>(`/projects/${projectId}/integrations`);
+  }
+
+  async connectIntegration(
+    projectId: string,
+    data: { provider: string; config: Record<string, any>; credential?: string }
+  ): Promise<any> {
+    return this.request(`/projects/${projectId}/integrations/connect`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async disconnectIntegration(projectId: string, provider: string): Promise<void> {
+    return this.request(`/projects/${projectId}/integrations/${provider}/disconnect`, {
+      method: 'POST',
+    });
+  }
+
+  async pauseIntegration(projectId: string, provider: string): Promise<void> {
+    return this.request(`/projects/${projectId}/integrations/${provider}/pause`, {
+      method: 'POST',
+    });
+  }
+
+  async resumeIntegration(projectId: string, provider: string): Promise<void> {
+    return this.request(`/projects/${projectId}/integrations/${provider}/resume`, {
+      method: 'POST',
+    });
+  }
+
+  async syncIntegration(projectId: string, provider: string): Promise<any> {
+    return this.request(`/projects/${projectId}/integrations/${provider}/sync`, {
+      method: 'POST',
+    });
+  }
+
+  async listDeadLetterEvents(projectId: string): Promise<DeadLetterEvent[]> {
+    return this.request<DeadLetterEvent[]>(`/projects/${projectId}/integrations/dead-letter`);
+  }
+
+  async retryDeadLetterEvent(projectId: string, dlqId: string): Promise<void> {
+    return this.request(`/projects/${projectId}/integrations/dead-letter/${dlqId}/retry`, {
+      method: 'POST',
+    });
+  }
+
+  async discardDeadLetterEvent(projectId: string, dlqId: string): Promise<void> {
+    return this.request(`/projects/${projectId}/integrations/dead-letter/${dlqId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listDeployments(projectId: string, limit: number = 50): Promise<Deployment[]> {
+    return this.request<Deployment[]>(`/projects/${projectId}/integrations/deployments?limit=${limit}`);
+  }
+
+  async getDeploymentLogs(projectId: string, externalDeployId: string, tailLines: number = 200): Promise<{ deployId: string; logs: string }> {
+    return this.request(`/projects/${projectId}/integrations/deployments/${externalDeployId}/logs?tailLines=${tailLines}`);
+  }
+
+  async initAgentPair(projectId: string): Promise<{ deviceCode: string; userCode: string; verificationUri: string; expiresIn: number }> {
+    return this.request(`/agent/pair/init?projectId=${projectId}`, {
+      method: 'POST',
+    });
+  }
+
+  async confirmAgentPair(projectId: string, userCode: string, hostname?: string): Promise<{ status: string; deviceToken: string }> {
+    return this.request(`/projects/${projectId}/agent/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ userCode, hostname: hostname || 'local-workstation', os: navigator.platform, localPath: '' }),
+    });
+  }
+
+  async listAgentDevices(projectId: string): Promise<AgentDevice[]> {
+    return this.request<AgentDevice[]>(`/projects/${projectId}/agent/devices`);
+  }
+
+  async disconnectAgentDevice(projectId: string, deviceId: string): Promise<void> {
+    return this.request(`/projects/${projectId}/agent/devices/${deviceId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ==========================================
+  // Phase 5: Workflow Coordination
+  // ==========================================
+
+  async listTasks(projectId: string, status?: TaskStatus, limit: number = 50, offset: number = 0): Promise<Task[]> {
+    const query = new URLSearchParams();
+    if (status) query.append('status', status);
+    query.append('limit', limit.toString());
+    query.append('offset', offset.toString());
+    return this.request<Task[]>(`/projects/${projectId}/tasks?${query.toString()}`);
+  }
+
+  async createTask(projectId: string, data: { title: string; description?: string; priority?: string; assigneeId?: string; isProposedByAgent?: boolean; agentProposalReason?: string }): Promise<Task> {
+    return this.request<Task>(`/projects/${projectId}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTask(projectId: string, taskId: string): Promise<Task> {
+    return this.request<Task>(`/projects/${projectId}/tasks/${taskId}`);
+  }
+
+  async updateTaskStatus(projectId: string, taskId: string, data: { status: TaskStatus; expectedLockVersion: number; reason?: string; humanOverrideReason?: string; actorType?: string; actorId?: string }): Promise<Task> {
+    return this.request<Task>(`/projects/${projectId}/tasks/${taskId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async acceptProposedTask(projectId: string, taskId: string): Promise<Task> {
+    return this.request<Task>(`/projects/${projectId}/tasks/${taskId}/accept`, {
+      method: 'POST',
+    });
+  }
+
+  async getTaskContext(projectId: string, taskId: string): Promise<TaskContext> {
+    return this.request<TaskContext>(`/projects/${projectId}/tasks/${taskId}/context`);
+  }
+
+  async listTaskEvents(projectId: string, taskId: string): Promise<TaskEvent[]> {
+    return this.request<TaskEvent[]>(`/projects/${projectId}/tasks/${taskId}/events`);
+  }
+
+  async listTaskLinks(projectId: string, taskId: string): Promise<TaskLink[]> {
+    return this.request<TaskLink[]>(`/projects/${projectId}/tasks/${taskId}/links`);
+  }
+
+  async linkTask(projectId: string, taskId: string, data: { linkType: string; targetId: string; targetLabel: string }): Promise<void> {
+    return this.request(`/projects/${projectId}/tasks/${taskId}/links`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async recordImplementation(projectId: string, taskId: string, data: { summary: string; modifiedFiles?: string[]; unresolvedIssues?: string[]; sessionId?: string; agentPlatform?: string }): Promise<ImplementationRecord> {
+    return this.request<ImplementationRecord>(`/projects/${projectId}/tasks/${taskId}/implementations`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async recordTestExecution(projectId: string, taskId: string, data: { testType?: string; framework?: string; passed: boolean; totalTests: number; passedTests: number; failedTests: number; durationMs: number; errorSummary?: string; rawLogs?: string; sessionId?: string; recordedBy?: string }): Promise<TestExecutionRecord> {
+    return this.request<TestExecutionRecord>(`/projects/${projectId}/tasks/${taskId}/tests`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async listDebuggingRecords(projectId: string, taskId: string): Promise<DebuggingRecord[]> {
+    return this.request<DebuggingRecord[]>(`/projects/${projectId}/tasks/${taskId}/debugging`);
+  }
+
+  async getDebuggingPackage(projectId: string, taskId: string, debuggingId: string): Promise<any> {
+    return this.request(`/projects/${projectId}/tasks/${taskId}/debugging/${debuggingId}/package`);
+  }
+
+  async listActionRequests(projectId: string, status?: string): Promise<ActionRequest[]> {
+    const query = status ? `?status=${status}` : '';
+    return this.request<ActionRequest[]>(`/projects/${projectId}/actions${query}`);
+  }
+
+  async submitActionRequest(projectId: string, data: { actionType: string; parameters: Record<string, any>; isDestructive?: boolean }): Promise<ActionRequest> {
+    return this.request<ActionRequest>(`/projects/${projectId}/actions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async reviewActionRequest(projectId: string, actionId: string, data: { approved: boolean; reviewNotes?: string }): Promise<ActionRequest> {
+    return this.request<ActionRequest>(`/projects/${projectId}/actions/${actionId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getWorkflowOverview(projectId: string): Promise<any> {
+    return this.request(`/projects/${projectId}/workflow/overview`);
+  }
+
+  async getIntegrationHealth(projectId: string): Promise<IntegrationHealth[]> {
+    return this.request<IntegrationHealth[]>(`/projects/${projectId}/workflow/health`);
+  }
+
+  async analyzeChangeImpact(projectId: string, files: string[]): Promise<ChangeImpactResult> {
+    return this.request<ChangeImpactResult>(`/projects/${projectId}/code-intel/impact`, {
+      method: 'POST',
+      body: JSON.stringify(files),
+    });
+  }
+
+  async getRelevantTests(projectId: string, files: string[]): Promise<string[]> {
+    const query = files.map(f => `file=${encodeURIComponent(f)}`).join('&');
+    return this.request<string[]>(`/projects/${projectId}/code-intel/relevant-tests?${query}`);
   }
 }
 

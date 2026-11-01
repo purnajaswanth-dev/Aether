@@ -16,3 +16,4 @@ public record McpPromptDefinition(
         boolean required
     ) {}
 }
+

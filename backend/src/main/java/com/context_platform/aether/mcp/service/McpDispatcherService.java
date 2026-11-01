@@ -230,3 +230,4 @@ public class McpDispatcherService {
         return promptService.getPrompt(name, arguments, token);
     }
 }
+

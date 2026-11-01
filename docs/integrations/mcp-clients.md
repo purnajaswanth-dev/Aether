@@ -145,3 +145,4 @@ Per Phase 2 prompt requirements:
      ```
    - **Rate Limiting**: Sliding window rate limiter tracking requests per minute per token. Exceeding the threshold returns HTTP 429 / JSON-RPC error `-32000 Rate limit exceeded`.
    - **Audit & Activity Logging**: Every call logs to `audit_events` and `mcp_call_logs` (tool name, project ID, token ID, client platform, duration ms, status, error message; NO sensitive payloads or credentials).
+

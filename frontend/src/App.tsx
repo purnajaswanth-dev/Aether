@@ -8,6 +8,8 @@ import { CreateProjectPage } from "./pages/CreateProjectPage";
 import { ProjectOverviewPage } from "./pages/ProjectOverviewPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { DecisionsPage } from "./pages/DecisionsPage";
+import { TasksPage } from "./pages/TasksPage";
+import { ApprovalInboxPage } from "./pages/ApprovalInboxPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { SharedMemoryPage } from "./pages/SharedMemoryPage";
@@ -79,6 +81,8 @@ export function App() {
             <Route path="/projects/:projectId/memory" element={<SharedMemoryPage />} />
             <Route path="/projects/:projectId/artifacts" element={<ArtifactsPage />} />
             <Route path="/projects/:projectId/decisions" element={<DecisionsPage />} />
+            <Route path="/projects/:projectId/tasks" element={<TasksPage />} />
+            <Route path="/projects/:projectId/inbox" element={<ApprovalInboxPage />} />
             <Route path="/projects/:projectId/timeline" element={<TimelinePage />} />
             <Route path="/projects/:projectId/integrations" element={<IntegrationsPage />} />
             <Route path="/projects/:projectId/settings" element={<SettingsPage />} />

@@ -16,5 +16,9 @@ public class AuditService {
     public void log(UUID projectId, UUID userId, String action, String actorType, String ipAddress, String userAgent, String detailsJson) {
         auditRepository.record(projectId, userId, action, actorType, ipAddress, userAgent, detailsJson);
     }
+
+    public java.util.List<AuditEvent> listByProject(UUID projectId, int limit) {
+        return auditRepository.listByProject(projectId, limit);
+    }
 }
 

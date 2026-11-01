@@ -68,6 +68,17 @@ public class McpManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/tokens/{tokenId}/rotate")
+    @Operation(summary = "Rotate an existing MCP token, invalidating the old one and issuing a new secret")
+    public ResponseEntity<CreateMcpTokenResponse> rotateToken(
+        @PathVariable UUID projectId,
+        @PathVariable UUID tokenId,
+        @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        securityChecker.verifyProjectAccess(projectId, principal != null ? principal.id() : null, "MEMBER");
+        return ResponseEntity.ok(tokenService.rotateToken(tokenId, projectId));
+    }
+
     @PostMapping("/tokens/{tokenId}/pause")
     @Operation(summary = "Pause or resume an MCP connection without deleting data")
     public ResponseEntity<Void> pauseToken(
@@ -119,3 +130,4 @@ public class McpManagementController {
         return ResponseEntity.ok(tokenService.generateClientConfig(projectId, platform, baseUrl, token));
     }
 }
+

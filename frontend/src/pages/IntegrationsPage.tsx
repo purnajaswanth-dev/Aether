@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/services/api";
 import {
@@ -7,6 +7,9 @@ import {
   McpReliabilityReport,
   McpClientPlatform,
   McpClientConfig,
+  IntegrationSummary,
+  CapabilityDescriptor,
+  AgentDevice,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +25,9 @@ import {
 } from "@/components/ui/dialog";
 import { CodeBlock } from "@/components/ui/code-block";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DeploymentsViewer } from "@/components/DeploymentsViewer";
+import { LocalProjectWizard } from "@/components/LocalProjectWizard";
+import { DeadLetterQueueDrawer } from "@/components/DeadLetterQueueDrawer";
 import {
   Plug,
   Bot,
@@ -44,27 +50,30 @@ import {
   Layers,
   Sparkles,
   ExternalLink,
+  Laptop,
+  AlertTriangle,
+  Clock,
+  ShieldCheck,
+  FileCode,
 } from "lucide-react";
 
-interface ProviderDef {
+interface AiProviderDef {
   id: string;
   name: string;
-  platform: McpClientPlatform | null;
+  platform: McpClientPlatform;
   category: string;
   description: string;
-  isMcpSupported: boolean;
   transportInfo: string;
   plannedCapabilities: string[];
 }
 
-const PROVIDERS: ProviderDef[] = [
+const AI_PROVIDERS: AiProviderDef[] = [
   {
     id: "antigravity",
     name: "Google Antigravity",
     platform: "ANTIGRAVITY",
     category: "AI Agent",
     description: "AI-first development environment with native Streamable HTTP MCP support and workspace rules.",
-    isMcpSupported: true,
     transportInfo: "Streamable HTTP (POST /api/mcp)",
     plannedCapabilities: ["Persistent memory retrieval", "Workspace rules (.agents/rules/aether.md)", "Artifact creation & ADR proposal"],
   },
@@ -74,7 +83,6 @@ const PROVIDERS: ProviderDef[] = [
     platform: "CLAUDE",
     category: "AI Assistant",
     description: "Desktop assistant connected via mcp-remote stdio bridge with scoped Bearer authentication.",
-    isMcpSupported: true,
     transportInfo: "Stdio via mcp-remote bridge",
     plannedCapabilities: ["Architecture review & ADR proposals", "Full artifact retrieval with SHA-256 provenance", "Review findings recording"],
   },
@@ -84,7 +92,6 @@ const PROVIDERS: ProviderDef[] = [
     platform: "CHATGPT",
     category: "AI Assistant",
     description: "Custom MCP connector / Actions integration for ChatGPT Plus/Team/Enterprise workspaces.",
-    isMcpSupported: true,
     transportInfo: "Remote HTTPS (Streamable HTTP / SSE)",
     plannedCapabilities: ["Project overview & context injection", "Memory full-text search", "Conversation transcript export"],
   },
@@ -94,49 +101,8 @@ const PROVIDERS: ProviderDef[] = [
     platform: "OTHER",
     category: "Developer Tool",
     description: "Any external IDE or agent supporting Model Context Protocol via Streamable HTTP or legacy SSE.",
-    isMcpSupported: true,
     transportInfo: "Streamable HTTP & SSE (Dual transport)",
-    plannedCapabilities: ["Full 13 MCP engineering tools", "Resources & Prompts support", "Per-token rate limiting"],
-  },
-  {
-    id: "github",
-    name: "GitHub",
-    platform: null,
-    category: "Version Control",
-    description: "Bi-directional commit linkage, PR memory capture, and repository webhook ingestion.",
-    isMcpSupported: false,
-    transportInfo: "REST API & Webhooks (Phase 4)",
-    plannedCapabilities: ["PR summary sync", "Commit SHA provenance", "Repository webhook receiver"],
-  },
-  {
-    id: "render",
-    name: "Render",
-    platform: null,
-    category: "Cloud Deployment",
-    description: "Continuous deployment log capture, service health monitoring, and release verification.",
-    isMcpSupported: false,
-    transportInfo: "Deploy Hooks & Telemetry (Phase 4)",
-    plannedCapabilities: ["Deployment status tracking", "Build log ingestion", "Verification evidence capture"],
-  },
-  {
-    id: "postman",
-    name: "Postman",
-    platform: null,
-    category: "API Testing",
-    description: "API collection synchronization, contract verification test results, and OpenAPI spec diffs.",
-    isMcpSupported: false,
-    transportInfo: "Collection Webhooks (Phase 5)",
-    plannedCapabilities: ["API contract verification", "Collection test result recording", "Endpoint schema capture"],
-  },
-  {
-    id: "docker",
-    name: "Docker",
-    platform: null,
-    category: "Containerization",
-    description: "Container build verification, runtime configuration validation, and image digest hashes.",
-    isMcpSupported: false,
-    transportInfo: "Daemon API (Phase 5)",
-    plannedCapabilities: ["Dockerfile validation", "Image digest integrity", "Runtime environment verification"],
+    plannedCapabilities: ["Full 20 MCP engineering tools", "Resources & Prompts support", "Per-token rate limiting"],
   },
 ];
 
@@ -145,126 +111,166 @@ const ALL_CONSTITUTIONAL_PERMISSIONS = [
   { key: "READ_ARTIFACTS", label: "Read Artifacts", desc: "Allows downloading original raw specifications and code artifacts" },
   { key: "SAVE_ARTIFACTS", label: "Save Artifacts", desc: "Allows appending immutable versions and review findings" },
   { key: "RECORD_DECISIONS", label: "Record Decisions", desc: "Allows proposing new Architectural Decision Records (status: PROPOSED)" },
-  { key: "READ_DEPLOYMENT_DATA", label: "Read Deployment Data", desc: "Allows reading environment configs and verified release hashes" },
+  { key: "READ_DEPLOYMENT_DATA", label: "Read Deployment Data", desc: "Allows reading environment configs, build logs, and release hashes" },
   { key: "EXECUTE_APPROVED_ACTIONS", label: "Execute Approved Actions", desc: "Allows triggering actions explicitly approved by human reviewers" },
 ];
 
 export function IntegrationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
 
-  // State
-  const [tokens, setTokens] = React.useState<McpToken[]>([]);
-  const [activityLogs, setActivityLogs] = React.useState<McpActivityLog[]>([]);
-  const [reliability, setReliability] = React.useState<McpReliabilityReport | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [activeTab, setActiveTab] = React.useState("catalog");
+  // Navigation tab
+  const [activeTab, setActiveTab] = useState("platforms");
 
-  // Filters for Activity Log
-  const [statusFilter, setStatusFilter] = React.useState("ALL");
-  const [toolFilter, setToolFilter] = React.useState("");
+  // Phase 4 Engineering Integrations state
+  const [capabilities, setCapabilities] = useState<CapabilityDescriptor[]>([]);
+  const [integrations, setIntegrations] = useState<IntegrationSummary[]>([]);
+  const [devices, setDevices] = useState<AgentDevice[]>([]);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [connectModalProvider, setConnectModalProvider] = useState<string | null>(null);
+  const [configFields, setConfigFields] = useState<Record<string, string>>({});
+  const [credentialSecret, setCredentialSecret] = useState<string>("");
+  const [connecting, setConnecting] = useState(false);
+  const [syncingProvider, setSyncingProvider] = useState<string | null>(null);
 
-  // Connect Stepper Modal State
-  const [isConnectOpen, setIsConnectOpen] = React.useState(false);
-  const [selectedProvider, setSelectedProvider] = React.useState<ProviderDef | null>(null);
-  const [connectStep, setConnectStep] = React.useState<1 | 2 | 3>(1);
-  const [tokenName, setTokenName] = React.useState("");
-  const [selectedPermissions, setSelectedPermissions] = React.useState<string[]>([
+  // Phase 2 MCP state
+  const [tokens, setTokens] = useState<McpToken[]>([]);
+  const [logs, setLogs] = useState<McpActivityLog[]>([]);
+  const [reliability, setReliability] = useState<McpReliabilityReport | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Filters for MCP activity logs
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [toolFilter, setToolFilter] = useState<string>("ALL");
+
+  // Token Creation Modal State
+  const [selectedAiProvider, setSelectedAiProvider] = useState<AiProviderDef | null>(null);
+  const [isAiConnectOpen, setIsAiConnectOpen] = useState(false);
+  const [tokenName, setTokenName] = useState("");
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([
     "READ_PROJECT_CONTEXT",
     "READ_ARTIFACTS",
     "SAVE_ARTIFACTS",
     "RECORD_DECISIONS",
   ]);
-  const [rateLimit, setRateLimit] = React.useState(60);
-  const [generatedSecretToken, setGeneratedSecretToken] = React.useState<string | null>(null);
-  const [clientConfig, setClientConfig] = React.useState<McpClientConfig | null>(null);
-  const [copiedToken, setCopiedToken] = React.useState(false);
-  const [copiedConfig, setCopiedConfig] = React.useState(false);
-  const [copiedRules, setCopiedRules] = React.useState(false);
+  const [rateLimit, setRateLimit] = useState(60);
+  const [generatedSecretToken, setGeneratedSecretToken] = useState<string | null>(null);
+  const [clientConfig, setClientConfig] = useState<McpClientConfig | null>(null);
+  const [aiConnectStep, setAiConnectStep] = useState<1 | 2>(1);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const [copiedSnippet, setCopiedSnippet] = useState(false);
 
-  const loadData = React.useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (!projectId) return;
     try {
-      const [tokenList, logs, metrics] = await Promise.all([
-        api.listMcpTokens(projectId),
-        api.getMcpActivity(projectId, { limit: 50, status: statusFilter !== "ALL" ? statusFilter : undefined, tool: toolFilter || undefined }),
-        api.getMcpReliability(projectId),
+      setLoading(true);
+      const [caps, ints, devs, tokenList, reliabilityRep, logList] = await Promise.all([
+        api.getIntegrationCapabilities(projectId).catch(() => []),
+        api.listProjectIntegrations(projectId).catch(() => []),
+        api.listAgentDevices(projectId).catch(() => []),
+        api.listMcpTokens(projectId).catch(() => []),
+        api.getMcpReliability(projectId).catch(() => null),
+        api.getMcpActivity(projectId, {
+          status: statusFilter === "ALL" ? undefined : statusFilter,
+          tool: toolFilter === "ALL" ? undefined : toolFilter,
+          limit: 100,
+        }).catch(() => []),
       ]);
+
+      setCapabilities(caps);
+      setIntegrations(ints);
+      setDevices(devs);
       setTokens(tokenList);
-      setActivityLogs(logs);
-      setReliability(metrics);
+      setReliability(reliabilityRep);
+      setLogs(logList);
     } catch (err) {
-      console.error("Failed to load MCP integration data", err);
+      console.error("Failed to load integrations", err);
     } finally {
       setLoading(false);
     }
   }, [projectId, statusFilter, toolFilter]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // Derive honest status for each provider
-  const getDerivedStatus = (provider: ProviderDef) => {
-    if (!provider.isMcpSupported || !provider.platform) {
-      return { label: "Not available yet", variant: "neutral" as const, subtitle: "Planned for later phase" };
-    }
-
-    const platformTokens = tokens.filter((t) => t.clientPlatform === provider.platform && !t.isRevoked);
-    if (platformTokens.length === 0) {
-      return { label: "Not connected", variant: "neutral" as const, subtitle: "No active MCP token configured" };
-    }
-
-    const hasPaused = platformTokens.some((t) => t.isPaused);
-    if (hasPaused && platformTokens.every((t) => t.isPaused)) {
-      return { label: "Paused", variant: "warning" as const, subtitle: "Connection paused by project admin" };
-    }
-
-    const lastUsedToken = platformTokens
-      .filter((t) => t.lastUsedAt)
-      .sort((a, b) => new Date(b.lastUsedAt!).getTime() - new Date(a.lastUsedAt!).getTime())[0];
-
-    if (!lastUsedToken || !lastUsedToken.lastUsedAt) {
-      return { label: "Awaiting first call", variant: "info" as const, subtitle: "Token created; waiting for client handshake" };
-    }
-
-    const diffMinutes = Math.round((Date.now() - new Date(lastUsedToken.lastUsedAt).getTime()) / 60000);
-    const timeAgoStr = diffMinutes < 1 ? "just now" : diffMinutes < 60 ? `${diffMinutes}m ago` : `${Math.round(diffMinutes / 60)}h ago`;
-
-    return { label: `Connected (${timeAgoStr})`, variant: "success" as const, subtitle: `Active token: ${lastUsedToken.tokenPrefix}` };
+  // Handle Engineering Platform Connect
+  const openPlatformConnect = (provider: string) => {
+    setConnectModalProvider(provider);
+    setConfigFields({});
+    setCredentialSecret("");
   };
 
-  const handleOpenConnect = (provider: ProviderDef) => {
-    setSelectedProvider(provider);
-    setConnectStep(1);
+  const handleConnectPlatform = async () => {
+    if (!projectId || !connectModalProvider) return;
+    try {
+      setConnecting(true);
+      await api.connectIntegration(projectId, {
+        provider: connectModalProvider,
+        config: configFields,
+        credential: credentialSecret || undefined,
+      });
+      setConnectModalProvider(null);
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to connect platform: " + (err.message || String(err)));
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleDisconnectPlatform = async (provider: string) => {
+    if (!projectId) return;
+    if (!confirm(`Are you sure you want to disconnect ${provider}? Stored credentials will be purged.`)) return;
+    try {
+      await api.disconnectIntegration(projectId, provider);
+      await loadData();
+    } catch (err: any) {
+      alert("Failed to disconnect: " + err.message);
+    }
+  };
+
+  const handleSyncPlatform = async (provider: string) => {
+    if (!projectId) return;
+    try {
+      setSyncingProvider(provider);
+      await api.syncIntegration(projectId, provider);
+      await loadData();
+    } catch (err: any) {
+      alert("Sync failed: " + err.message);
+    } finally {
+      setSyncingProvider(null);
+    }
+  };
+
+  // MCP helpers
+  const handleOpenAiConnect = (provider: AiProviderDef) => {
+    setSelectedAiProvider(provider);
+    setAiConnectStep(1);
     setTokenName(`${provider.name} Connection`);
-    setSelectedPermissions(["READ_PROJECT_CONTEXT", "READ_ARTIFACTS", "SAVE_ARTIFACTS", "RECORD_DECISIONS"]);
+    setSelectedPermissions(["READ_PROJECT_CONTEXT", "READ_ARTIFACTS", "SAVE_ARTIFACTS", "RECORD_DECISIONS", "READ_DEPLOYMENT_DATA"]);
     setRateLimit(60);
     setGeneratedSecretToken(null);
     setClientConfig(null);
-    setIsConnectOpen(true);
+    setIsAiConnectOpen(true);
   };
 
   const handleGenerateToken = async () => {
-    if (!projectId || !selectedProvider?.platform) return;
-
+    if (!projectId || !selectedAiProvider?.platform) return;
     try {
       const resp = await api.createMcpToken(projectId, {
         tokenName,
-        clientPlatform: selectedProvider.platform,
+        clientPlatform: selectedAiProvider.platform,
         permissions: selectedPermissions,
         rateLimitPerMinute: rateLimit,
       });
 
       setGeneratedSecretToken(resp.rawToken);
-
-      // Fetch client specific configuration with the generated token
-      const config = await api.getMcpConfig(projectId, selectedProvider.platform, window.location.origin, resp.rawToken);
+      const config = await api.getMcpConfig(projectId, selectedAiProvider.platform, window.location.origin, resp.rawToken);
       setClientConfig(config);
-
-      setConnectStep(2);
+      setAiConnectStep(2);
       loadData();
-    } catch (err) {
-      alert("Failed to generate token: " + (err instanceof Error ? err.message : String(err)));
+    } catch (err: any) {
+      alert("Failed to generate token: " + (err.message || String(err)));
     }
   };
 
@@ -273,7 +279,7 @@ export function IntegrationsPage() {
     try {
       await api.pauseMcpToken(projectId, token.id, !token.isPaused);
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       alert("Failed to update token state: " + err);
     }
   };
@@ -281,11 +287,10 @@ export function IntegrationsPage() {
   const handleRevokeToken = async (tokenId: string) => {
     if (!projectId) return;
     if (!confirm("Are you sure you want to revoke this MCP token? Clients using it will be blocked immediately.")) return;
-
     try {
       await api.revokeMcpToken(projectId, tokenId);
       loadData();
-    } catch (err) {
+    } catch (err: any) {
       alert("Failed to revoke token: " + err);
     }
   };
@@ -296,6 +301,21 @@ export function IntegrationsPage() {
     setTimeout(() => setter(false), 2000);
   };
 
+  const getPlatformIcon = (provider: string) => {
+    switch (provider.toUpperCase()) {
+      case "GITHUB":
+        return <GitBranch className="h-5 w-5 text-accent" />;
+      case "RENDER":
+        return <Cloud className="h-5 w-5 text-accent" />;
+      case "POSTMAN":
+        return <FileCode className="h-5 w-5 text-accent" />;
+      case "DOCKER":
+        return <Container className="h-5 w-5 text-accent" />;
+      default:
+        return <Plug className="h-5 w-5 text-accent" />;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header */}
@@ -303,14 +323,14 @@ export function IntegrationsPage() {
         <div>
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-xl font-semibold text-text-primary tracking-tight">
-              AI & Engineering Integrations
+              Integrations & Connected Agents
             </h1>
             <Badge variant="neutral" size="sm" showDot={false}>
-              MCP Server Protocol 2025-03-26 & 2024-11-05
+              Phase 4 External Ecosystem
             </Badge>
           </div>
           <p className="text-xs text-text-secondary">
-            Expose persistent project memory to independent AI agents (Claude, Antigravity, ChatGPT, Cursor) through remote Model Context Protocol.
+            Connect CI/CD platforms, external engineering tools, and local workstations with cryptographic verification and zero data loss.
           </p>
         </div>
 
@@ -318,350 +338,395 @@ export function IntegrationsPage() {
           <Button variant="outline" size="sm" onClick={loadData} className="gap-1.5 text-xs">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
+          <Button variant="default" size="sm" onClick={() => setIsWizardOpen(true)} className="gap-1.5 text-xs">
+            <Laptop className="h-3.5 w-3.5" /> Pair Workstation
+          </Button>
         </div>
       </div>
 
-      {/* Manual Import Fallback Notice (Non-negotiable Rule 9 & Honest Fallback) */}
-      <div className="flex items-start gap-3 rounded-panel border border-accent/20 bg-accent-subtle/50 p-4">
+      {/* Honest Capability & Boundary Banner */}
+      <div className="flex items-start gap-3 rounded-panel border border-accent/20 bg-accent-subtle/40 p-4">
         <Info className="h-4 w-4 text-accent shrink-0 mt-0.5" />
         <div className="text-xs text-text-primary space-y-1">
-          <span className="font-semibold block">Independent AI Client Fallback Guarantee</span>
+          <span className="font-semibold block">Constitutional Reliability & Security Guarantee (Rule 8 & 9)</span>
           <p className="text-text-secondary leading-relaxed">
-            If your target AI assistant does not support direct remote MCP connections, you can always use the first-class{" "}
-            <Link to={`/projects/${projectId}/artifacts`} className="text-accent underline font-medium hover:text-accent-hover">
-              Save to Project
-            </Link>{" "}
-            import flow to persist specifications, conversation transcripts, and code architectures with cryptographic SHA-256 verification.
+            All credentials are encrypted with AES-256-GCM and never logged. Render deploy hooks are inbound-only, so status is synchronized via REST polling. Postman environment sync is strictly excluded. External data boundaries are enforced with cryptographic HMAC signatures and dead-letter replay.
           </p>
         </div>
       </div>
 
       {/* Main Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="catalog">Catalogue & Connectors</TabsTrigger>
-          <TabsTrigger value="tokens" className="gap-1.5">
-            Active MCP Connections
-            {tokens.filter((t) => !t.isRevoked).length > 0 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[10px] text-canvas font-semibold">
-                {tokens.filter((t) => !t.isRevoked).length}
+        <TabsList className="grid grid-cols-2 sm:grid-cols-6 h-auto p-1">
+          <TabsTrigger value="platforms" className="gap-1 text-xs py-1.5">
+            <Plug className="h-3.5 w-3.5" /> Platforms
+          </TabsTrigger>
+          <TabsTrigger value="deployments" className="gap-1 text-xs py-1.5">
+            <Cloud className="h-3.5 w-3.5" /> Deployments
+          </TabsTrigger>
+          <TabsTrigger value="agent" className="gap-1 text-xs py-1.5">
+            <Laptop className="h-3.5 w-3.5" /> Workstation Agent
+            {devices.filter((d) => d.status === "AUTHORIZED").length > 0 && (
+              <span className="ml-1 h-4 w-4 rounded-full bg-success text-[10px] text-canvas font-bold flex items-center justify-center">
+                {devices.filter((d) => d.status === "AUTHORIZED").length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="activity">MCP Activity & Telemetry</TabsTrigger>
+          <TabsTrigger value="ai_connectors" className="gap-1 text-xs py-1.5">
+            <Bot className="h-3.5 w-3.5" /> AI MCP Clients
+          </TabsTrigger>
+          <TabsTrigger value="tokens" className="gap-1 text-xs py-1.5">
+            <Lock className="h-3.5 w-3.5" /> MCP Tokens
+          </TabsTrigger>
+          <TabsTrigger value="dlq" className="gap-1 text-xs py-1.5">
+            <ShieldAlert className="h-3.5 w-3.5 text-danger" /> Dead-Letter
+          </TabsTrigger>
         </TabsList>
 
-        {/* TAB 1: CATALOGUE & CONNECTORS */}
-        <TabsContent value="catalog" className="space-y-4">
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <Skeleton key={i} className="h-56 rounded-panel" />
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {PROVIDERS.map((item) => {
-                const status = getDerivedStatus(item);
-                return (
-                  <div
-                    key={item.id}
-                    className="flex flex-col justify-between rounded-panel border border-border bg-canvas p-4 shadow-lift"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-control bg-subtle border border-border">
-                            {item.platform ? <Bot className="h-4 w-4 text-accent" /> : <Layers className="h-4 w-4 text-text-tertiary" />}
-                          </div>
-                          <div>
-                            <h3 className="text-xs font-semibold text-text-primary">{item.name}</h3>
-                            <span className="text-[10px] text-text-tertiary block">{item.category}</span>
-                          </div>
+        {/* TAB 1: ENGINEERING PLATFORMS */}
+        <TabsContent value="platforms" className="space-y-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {capabilities.map((cap) => {
+              const activeInt = integrations.find((i) => i.provider === cap.provider);
+              const isConnected = activeInt?.status === "CONNECTED";
+              const isSyncing = syncingProvider === cap.provider;
+
+              return (
+                <div
+                  key={cap.provider}
+                  className="rounded-panel border border-border bg-surface p-5 flex flex-col justify-between hover:border-border-focus transition-colors"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded bg-surface-raised border border-border">
+                          {getPlatformIcon(cap.provider)}
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-semibold text-text-primary">{cap.displayName}</h3>
+                          <Badge
+                            variant={isConnected ? "success" : "neutral"}
+                            size="sm"
+                            className="mt-0.5"
+                          >
+                            {isConnected ? "Connected" : "Not Configured"}
+                          </Badge>
                         </div>
                       </div>
 
-                      <div className="mb-2">
-                        <Badge variant={status.variant} size="sm">
-                          {status.label}
-                        </Badge>
+                      <Badge variant="neutral" size="sm" showDot={false} className="text-[10px] font-mono">
+                        {cap.primarySyncMethod}
+                      </Badge>
+                    </div>
+
+                    <p className="text-xs text-text-secondary leading-relaxed">{cap.description}</p>
+
+                    <div className="space-y-1.5 pt-2 border-t border-border/50 text-[11px]">
+                      <div className="flex justify-between text-text-secondary">
+                        <span>Auth Model:</span>
+                        <span className="font-mono text-text-primary">{cap.authModel}</span>
                       </div>
-
-                      <p className="text-[11px] text-text-secondary leading-relaxed mb-3">
-                        {item.description}
-                      </p>
-
-                      <div className="rounded-control bg-subtle/80 p-2 border border-border/60 text-[10px] text-text-secondary mb-3">
-                        <span className="font-semibold text-text-primary block mb-0.5">Transport:</span>
-                        {item.transportInfo}
+                      <div className="flex justify-between text-text-secondary">
+                        <span>Rate Limits:</span>
+                        <span className="font-mono text-text-primary">{cap.rateLimits}</span>
                       </div>
-
-                      <div className="space-y-1 mb-3">
-                        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider block">
-                          Capabilities
-                        </span>
-                        {item.plannedCapabilities.slice(0, 2).map((cap, idx) => (
-                          <div key={idx} className="text-[10px] text-text-secondary flex items-center gap-1.5">
-                            <span className="h-1 w-1 rounded-full bg-text-tertiary shrink-0" />
-                            <span className="truncate">{cap}</span>
-                          </div>
-                        ))}
+                      <div className="text-text-secondary">
+                        <span>Limitations: </span>
+                        <span className="text-amber-500/90">{cap.limitations}</span>
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-border flex items-center justify-between text-xs mt-2">
-                      <span className="text-[10px] text-text-tertiary truncate max-w-[120px]" title={status.subtitle}>
-                        {status.subtitle}
-                      </span>
-
-                      {item.isMcpSupported ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1 text-xs font-medium"
-                          onClick={() => handleOpenConnect(item)}
-                        >
-                          <Sparkles className="h-3 w-3 text-accent" /> Connect
-                        </Button>
-                      ) : (
-                        <Button variant="outline" size="sm" disabled className="gap-1 opacity-60 text-xs">
-                          <Lock className="h-3 w-3" /> Connect
-                        </Button>
-                      )}
-                    </div>
+                    {activeInt && activeInt.maskedCredential && (
+                      <div className="bg-surface-raised/50 p-2 rounded border border-border/60 text-[11px] flex justify-between items-center">
+                        <span className="text-text-secondary">Credential:</span>
+                        <span className="font-mono text-text-primary">{activeInt.maskedCredential}</span>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
+
+                  <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-border">
+                    {isConnected ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isSyncing}
+                            onClick={() => handleSyncPlatform(cap.provider)}
+                            className="gap-1.5 text-xs"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin" : ""}`} />
+                            {isSyncing ? "Syncing..." : "Sync Now"}
+                          </Button>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDisconnectPlatform(cap.provider)}
+                          className="text-xs text-danger hover:text-danger hover:bg-danger-subtle"
+                        >
+                          Disconnect
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => openPlatformConnect(cap.provider)}
+                        className="w-full text-xs gap-1.5"
+                      >
+                        <Plug className="h-3.5 w-3.5" /> Configure {cap.displayName}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Webhook Endpoint Reference Card */}
+          <div className="rounded-panel border border-border bg-surface-raised p-4">
+            <h4 className="text-xs font-semibold text-text-primary mb-2 flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-accent" />
+              Incoming Ingestion Webhook Endpoints
+            </h4>
+            <p className="text-xs text-text-secondary mb-3">
+              Configure your remote repository or service to send events to Aether. Every payload is verified against your secret using constant-time HMAC-SHA256 signature checks.
+            </p>
+            <div className="space-y-2 font-mono text-xs">
+              <div className="bg-canvas p-2.5 rounded border border-border flex justify-between items-center">
+                <span className="text-accent">POST /api/webhooks/github/{projectId}</span>
+                <Badge variant="neutral" size="sm" showDot={false}>Header: X-Hub-Signature-256</Badge>
+              </div>
             </div>
-          )}
+          </div>
         </TabsContent>
 
-        {/* TAB 2: ACTIVE MCP CONNECTIONS */}
-        <TabsContent value="tokens" className="space-y-4">
+        {/* TAB 2: DEPLOYMENTS & VERIFICATION */}
+        <TabsContent value="deployments" className="pt-4">
+          {projectId && <DeploymentsViewer projectId={projectId} />}
+        </TabsContent>
+
+        {/* TAB 3: WORKSTATION AGENT */}
+        <TabsContent value="agent" className="space-y-6 pt-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-text-primary">
-              Project Scoped MCP Connection Tokens
-            </h2>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => handleOpenConnect(PROVIDERS[0])}
-            >
-              <Plug className="h-3.5 w-3.5" /> Create New MCP Connection
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">Paired Workstations</h3>
+              <p className="text-xs text-text-secondary">
+                Direct local project agent running on developer machines. Synchronizes project code, symbols, and test runs without uploading secrets.
+              </p>
+            </div>
+            <Button variant="default" size="sm" onClick={() => setIsWizardOpen(true)} className="gap-1.5 text-xs">
+              <Laptop className="h-3.5 w-3.5" /> Pair New Workstation
             </Button>
           </div>
 
-          {tokens.filter((t) => !t.isRevoked).length === 0 ? (
+          {devices.length === 0 ? (
             <EmptyState
-              icon={Plug}
-              title="No active MCP connections"
-              description="Connect Claude Desktop, Antigravity, or ChatGPT to enable two-way context exchange with project memory."
-              actionLabel="Connect First Agent"
-              onAction={() => handleOpenConnect(PROVIDERS[0])}
+              icon={Laptop}
+              title="No workstations paired yet"
+              description="Pair your local development environment using the aether-agent CLI to track local test executions and symbol changes."
+              actionLabel="Pair Workstation"
+              onAction={() => setIsWizardOpen(true)}
             />
           ) : (
-            <div className="rounded-panel border border-border bg-canvas overflow-hidden shadow-lift">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-subtle text-text-secondary font-medium h-9">
-                    <th className="px-4 py-2">Connection Name</th>
-                    <th className="px-4 py-2">Client Platform</th>
-                    <th className="px-4 py-2">Masked Token</th>
-                    <th className="px-4 py-2">Permissions</th>
-                    <th className="px-4 py-2">Rate Limit</th>
-                    <th className="px-4 py-2">Last Used</th>
-                    <th className="px-4 py-2">Status</th>
-                    <th className="px-4 py-2 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {tokens
-                    .filter((t) => !t.isRevoked)
-                    .map((token) => (
-                      <tr key={token.id} className="h-10 hover:bg-subtle/50 transition-colors">
-                        <td className="px-4 py-2 font-medium text-text-primary">{token.tokenName}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant="neutral" size="sm" showDot={false}>
-                            {token.clientPlatform}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2 font-mono text-[11px] text-text-secondary">
-                          {token.tokenPrefix}
-                        </td>
-                        <td className="px-4 py-2">
-                          <span className="text-[11px] text-text-tertiary">
-                            {token.permissions.length} granted
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-text-secondary">
-                          {token.rateLimitPerMinute}/min
-                        </td>
-                        <td className="px-4 py-2 text-text-tertiary text-[11px]">
-                          {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleString() : "Never"}
-                        </td>
-                        <td className="px-4 py-2">
-                          <Badge variant={token.isPaused ? "warning" : "success"} size="sm">
-                            {token.isPaused ? "Paused" : "Active"}
-                          </Badge>
-                        </td>
-                        <td className="px-4 py-2 text-right space-x-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => handleTogglePause(token)}
-                            title={token.isPaused ? "Resume connection" : "Pause connection"}
-                          >
-                            {token.isPaused ? <Play className="h-3.5 w-3.5 text-success" /> : <Pause className="h-3.5 w-3.5 text-warning" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-danger hover:bg-danger-subtle hover:text-danger"
-                            onClick={() => handleRevokeToken(token.id)}
-                            title="Revoke immediately"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {devices.map((device) => (
+                <div
+                  key={device.id}
+                  className="rounded-panel border border-border bg-surface p-4 space-y-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded bg-surface-raised border border-border">
+                        <Terminal className="h-4 w-4 text-accent" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-text-primary">
+                          {device.hostname || "Workstation"}
+                        </h4>
+                        <span className="text-[10px] text-text-secondary font-mono">{device.os || "Unknown OS"}</span>
+                      </div>
+                    </div>
+                    <Badge variant={device.status === "AUTHORIZED" ? "success" : "neutral"} size="sm">
+                      {device.status}
+                    </Badge>
+                  </div>
+
+                  <div className="space-y-1 text-xs text-text-secondary">
+                    <div className="flex justify-between">
+                      <span>Device Code:</span>
+                      <span className="font-mono text-text-primary">{device.deviceCode}</span>
+                    </div>
+                    {device.localPath && (
+                      <div className="flex justify-between">
+                        <span>Directory:</span>
+                        <span className="font-mono text-text-primary truncate max-w-[200px]">{device.localPath}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span>Paired At:</span>
+                      <span>{new Date(device.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-border flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={async () => {
+                        if (!projectId || !confirm("Revoke this workstation pair?")) return;
+                        await api.disconnectAgentDevice(projectId, device.id);
+                        loadData();
+                      }}
+                      className="text-xs text-danger hover:text-danger hover:bg-danger-subtle"
+                    >
+                      Revoke Device
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
+
+          {/* Local CLI Info Box */}
+          <div className="rounded-panel border border-border bg-surface-raised p-4 space-y-2">
+            <h4 className="text-xs font-semibold text-text-primary flex items-center gap-2">
+              <Terminal className="h-4 w-4 text-accent" />
+              Local-Only Air-Gapped Mode
+            </h4>
+            <p className="text-xs text-text-secondary">
+              Need strict compliance or offline operation? Run the local agent with zero external network connectivity:
+            </p>
+            <CodeBlock code="aether-agent run --local-only --listen 127.0.0.1:8124" language="bash" />
+          </div>
         </TabsContent>
 
-        {/* TAB 3: MCP ACTIVITY & TELEMETRY */}
-        <TabsContent value="activity" className="space-y-6">
-          {/* Reliability Metric Cards (Item 8) */}
-          {reliability && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-panel border border-border bg-canvas p-4 shadow-lift">
-                <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider block mb-1">
-                  Total MCP Calls
-                </span>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-semibold text-text-primary">{reliability.totalCalls}</span>
-                  <span className="text-xs text-success font-medium">{reliability.successfulCalls} success</span>
-                </div>
-              </div>
-
-              <div className="rounded-panel border border-border bg-canvas p-4 shadow-lift">
-                <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider block mb-1">
-                  Retrieve-Before-Save Rate
-                </span>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-semibold text-accent">{reliability.firstRetrievalBeforeSaveRate}%</span>
-                  <span className="text-[11px] text-text-tertiary">Disciplined sessions</span>
-                </div>
-                <p className="text-[10px] text-text-tertiary mt-1">Sessions reading context prior to first save</p>
-              </div>
-
-              <div className="rounded-panel border border-border bg-canvas p-4 shadow-lift">
-                <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider block mb-1">
-                  Save Completion Rate
-                </span>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-semibold text-success">{reliability.saveCompletionRate}%</span>
-                  <span className="text-[11px] text-text-tertiary">Persistent outputs</span>
-                </div>
-                <p className="text-[10px] text-text-tertiary mt-1">Sessions persisting code/spec evidence</p>
-              </div>
-
-              <div className="rounded-panel border border-border bg-canvas p-4 shadow-lift">
-                <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider block mb-1">
-                  Active Client Sessions
-                </span>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-2xl font-semibold text-text-primary">{reliability.sessionsTracked}</span>
-                  <span className="text-[11px] text-text-tertiary">Tracked tokens</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Activity Log Filter Bar */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-subtle p-3 rounded-control border border-border">
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <span className="text-xs text-text-secondary font-medium">Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-8 rounded-control border border-border bg-canvas px-2 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+        {/* TAB 4: AI MCP CLIENTS */}
+        <TabsContent value="ai_connectors" className="space-y-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {AI_PROVIDERS.map((provider) => (
+              <div
+                key={provider.id}
+                className="rounded-panel border border-border bg-surface p-5 flex flex-col justify-between hover:border-border-focus transition-colors"
               >
-                <option value="ALL">All Statuses</option>
-                <option value="SUCCESS">SUCCESS</option>
-                <option value="ERROR">ERROR</option>
-                <option value="RATE_LIMITED">RATE_LIMITED</option>
-                <option value="UNAUTHORIZED">UNAUTHORIZED</option>
-              </select>
-            </div>
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded bg-surface-raised border border-border">
+                        <Bot className="h-5 w-5 text-accent" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary">{provider.name}</h3>
+                        <span className="text-[10px] text-text-secondary">{provider.category}</span>
+                      </div>
+                    </div>
+                    <Badge variant="neutral" size="sm" showDot={false}>
+                      MCP Server
+                    </Badge>
+                  </div>
 
-            <div className="w-full sm:w-64">
-              <Input
-                placeholder="Filter by tool name..."
-                value={toolFilter}
-                onChange={(e) => setToolFilter(e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
+                  <p className="text-xs text-text-secondary leading-relaxed">{provider.description}</p>
+
+                  <div className="bg-surface-raised/60 p-2.5 rounded border border-border/50 text-[11px] font-mono text-text-secondary">
+                    <span className="text-text-primary font-semibold">Transport: </span>
+                    {provider.transportInfo}
+                  </div>
+                </div>
+
+                <div className="pt-4 mt-4 border-t border-border">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => handleOpenAiConnect(provider)}
+                    className="w-full text-xs gap-1.5"
+                  >
+                    <Plug className="h-3.5 w-3.5" /> Generate Connection Token
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* TAB 5: MCP TOKENS TABLE */}
+        <TabsContent value="tokens" className="space-y-4 pt-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary">Project Scoped MCP Access Tokens</h3>
+            <span className="text-xs text-text-secondary">
+              {tokens.filter((t) => !t.isRevoked).length} active tokens
+            </span>
           </div>
 
-          {/* Activity Log Table */}
-          {activityLogs.length === 0 ? (
+          {tokens.length === 0 ? (
             <EmptyState
-              icon={Activity}
-              title="No MCP calls recorded yet"
-              description="Calls made by Claude, Antigravity, or ChatGPT via Streamable HTTP or SSE will appear here with millisecond latency and audit attribution."
+              icon={Lock}
+              title="No MCP tokens created yet"
+              description="Generate a scoped token for Claude, Antigravity, or ChatGPT in the AI MCP Clients tab."
             />
           ) : (
-            <div className="rounded-panel border border-border bg-canvas overflow-hidden shadow-lift">
+            <div className="rounded-panel border border-border overflow-hidden bg-surface">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-border bg-subtle text-text-secondary font-medium h-9">
-                    <th className="px-4 py-2">Tool / Method</th>
-                    <th className="px-4 py-2">Client Platform</th>
-                    <th className="px-4 py-2">Latency</th>
-                    <th className="px-4 py-2">Status</th>
-                    <th className="px-4 py-2">Details / Error</th>
-                    <th className="px-4 py-2 text-right">Timestamp</th>
+                  <tr className="border-b border-border bg-surface-raised text-text-secondary font-medium">
+                    <th className="py-2.5 px-3">Name & Client</th>
+                    <th className="py-2.5 px-3">Prefix</th>
+                    <th className="py-2.5 px-3">Permissions</th>
+                    <th className="py-2.5 px-3">Rate Limit</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {activityLogs.map((log) => (
-                    <tr key={log.id} className="h-9 hover:bg-subtle/50 transition-colors">
-                      <td className="px-4 py-2 font-mono text-[11px] font-semibold text-text-primary">
-                        {log.toolName}
+                  {tokens.map((token) => (
+                    <tr key={token.id} className="hover:bg-surface-raised/40 transition-colors">
+                      <td className="py-2.5 px-3 font-medium text-text-primary">
+                        {token.tokenName}
+                        <div className="text-[10px] text-text-secondary font-mono">{token.clientPlatform}</div>
                       </td>
-                      <td className="px-4 py-2">
-                        <Badge variant="neutral" size="sm" showDot={false}>
-                          {log.clientPlatform}
-                        </Badge>
+                      <td className="py-2.5 px-3 font-mono text-text-secondary">{token.tokenPrefix}...</td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex flex-wrap gap-1">
+                          {token.permissions.map((p) => (
+                            <Badge key={p} variant="neutral" size="sm" showDot={false} className="text-[9px]">
+                              {p}
+                            </Badge>
+                          ))}
+                        </div>
                       </td>
-                      <td className="px-4 py-2 font-mono text-[11px] text-text-secondary">
-                        {log.durationMs} ms
+                      <td className="py-2.5 px-3 font-mono text-text-secondary">
+                        {token.rateLimitPerMinute} req/min
                       </td>
-                      <td className="px-4 py-2">
-                        <Badge
-                          variant={
-                            log.status === "SUCCESS"
-                              ? "success"
-                              : log.status === "RATE_LIMITED"
-                              ? "warning"
-                              : "danger"
-                          }
-                          size="sm"
-                        >
-                          {log.status}
-                        </Badge>
+                      <td className="py-2.5 px-3">
+                        {token.isRevoked ? (
+                          <Badge variant="neutral" size="sm">Revoked</Badge>
+                        ) : token.isPaused ? (
+                          <Badge variant="warning" size="sm">Paused</Badge>
+                        ) : (
+                          <Badge variant="success" size="sm">Active</Badge>
+                        )}
                       </td>
-                      <td className="px-4 py-2 text-text-tertiary text-[11px] max-w-xs truncate" title={log.errorMessage || ""}>
-                        {log.errorMessage ? log.errorMessage : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-right text-text-tertiary text-[11px] whitespace-nowrap">
-                        {new Date(log.createdAt).toLocaleTimeString()}
+                      <td className="py-2.5 px-3 text-right space-x-2">
+                        {!token.isRevoked && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleTogglePause(token)}
+                              className="text-xs"
+                            >
+                              {token.isPaused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRevokeToken(token.id)}
+                              className="text-xs text-danger hover:text-danger hover:bg-danger-subtle"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -670,61 +735,190 @@ export function IntegrationsPage() {
             </div>
           )}
         </TabsContent>
+
+        {/* TAB 6: DEAD-LETTER QUEUE */}
+        <TabsContent value="dlq" className="pt-4">
+          {projectId && <DeadLetterQueueDrawer projectId={projectId} />}
+        </TabsContent>
       </Tabs>
 
-      {/* CONNECT STEPPER DIALOG */}
-      <Dialog open={isConnectOpen} onOpenChange={setIsConnectOpen}>
-        <DialogContent className="max-w-xl">
+      {/* PLATFORM CONFIGURATION MODAL */}
+      <Dialog open={!!connectModalProvider} onOpenChange={(open) => !open && setConnectModalProvider(null)}>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
-              <Bot className="h-4 w-4 text-accent" /> Connect {selectedProvider?.name} (Step {connectStep} of 3)
-            </DialogTitle>
-            <DialogDescription className="text-xs text-text-secondary">
-              {connectStep === 1 && "Configure connection identity, permissions, and rate limits for this AI assistant."}
-              {connectStep === 2 && "Copy your single-use Bearer token. For security, it cannot be recovered after this dialog closes."}
-              {connectStep === 3 && "Apply the configuration snippet and workspace rules into your client's environment."}
+            <DialogTitle>Configure {connectModalProvider}</DialogTitle>
+            <DialogDescription>
+              Enter platform connection credentials. Secrets are stored encrypted with AES-256-GCM.
             </DialogDescription>
           </DialogHeader>
 
-          {/* STEP 1: PERMISSIONS & RATE LIMITS */}
-          {connectStep === 1 && (
+          <div className="space-y-4 py-2">
+            {connectModalProvider === "GITHUB" && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Repository (owner/repo)</label>
+                  <Input
+                    placeholder="e.g. acme-corp/core-service"
+                    value={configFields.repository || ""}
+                    onChange={(e) => setConfigFields({ ...configFields, repository: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Webhook Secret</label>
+                  <Input
+                    type="password"
+                    placeholder="HMAC SHA-256 shared secret"
+                    value={configFields.webhook_secret || ""}
+                    onChange={(e) => setConfigFields({ ...configFields, webhook_secret: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">GitHub Personal Access Token (PAT)</label>
+                  <Input
+                    type="password"
+                    placeholder="ghp_..."
+                    value={credentialSecret}
+                    onChange={(e) => setCredentialSecret(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+
+            {connectModalProvider === "RENDER" && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Service ID</label>
+                  <Input
+                    placeholder="e.g. srv-c0123456789"
+                    value={configFields.service_id || ""}
+                    onChange={(e) => setConfigFields({ ...configFields, service_id: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Render API Key</label>
+                  <Input
+                    type="password"
+                    placeholder="rnd_..."
+                    value={credentialSecret}
+                    onChange={(e) => setCredentialSecret(e.target.value)}
+                  />
+                </div>
+                <div className="bg-surface-raised p-2.5 rounded text-[11px] text-text-secondary border border-border">
+                  <span className="font-semibold text-text-primary">Verified Architecture: </span>
+                  Render deploy hooks do not emit outbound webhooks. Aether uses REST polling (`GET /v1/services/{'{serviceId}'}/deploys`) to sync deploy status and logs.
+                </div>
+              </>
+            )}
+
+            {connectModalProvider === "POSTMAN" && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Collection ID</label>
+                  <Input
+                    placeholder="Postman collection UID"
+                    value={configFields.collection_id || ""}
+                    onChange={(e) => setConfigFields({ ...configFields, collection_id: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Postman API Key</label>
+                  <Input
+                    type="password"
+                    placeholder="PMAK-..."
+                    value={credentialSecret}
+                    onChange={(e) => setCredentialSecret(e.target.value)}
+                  />
+                </div>
+                <div className="bg-surface-raised p-2.5 rounded text-[11px] text-text-secondary border border-border">
+                  <span className="font-semibold text-text-primary">Rule 8 Enforced: </span>
+                  Postman `/environments` endpoint is strictly excluded. Only collections, schemas, and contract tests are ingested.
+                </div>
+              </>
+            )}
+
+            {connectModalProvider === "DOCKER" && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-text-primary">Dockerfile / Compose Path</label>
+                  <Input
+                    placeholder="e.g. docker-compose.yml or Dockerfile"
+                    value={configFields.compose_path || "docker-compose.yml"}
+                    onChange={(e) => setConfigFields({ ...configFields, compose_path: e.target.value })}
+                  />
+                </div>
+                <div className="bg-surface-raised p-2.5 rounded text-[11px] text-text-secondary border border-border">
+                  <span className="font-semibold text-text-primary">File-Based Analysis: </span>
+                  Analyzes Dockerfile syntax, multi-stage builds, base image digests, and compose services from files. Direct daemon socket connections are unsupported.
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={() => setConnectModalProvider(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              disabled={connecting}
+              onClick={handleConnectPlatform}
+              className="gap-1.5"
+            >
+              {connecting ? "Saving..." : "Save Configuration"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI MCP TOKEN MODAL */}
+      <Dialog open={isAiConnectOpen} onOpenChange={setIsAiConnectOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Connect {selectedAiProvider?.name}</DialogTitle>
+            <DialogDescription>
+              Generate a project-scoped Bearer token with specific constitutional permissions.
+            </DialogDescription>
+          </DialogHeader>
+
+          {aiConnectStep === 1 ? (
             <div className="space-y-4 py-2">
-              <div>
-                <label className="text-xs font-medium text-text-secondary block mb-1">
-                  Connection Name
-                </label>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-text-primary">Connection Name</label>
                 <Input
                   value={tokenName}
                   onChange={(e) => setTokenName(e.target.value)}
-                  placeholder="e.g. Claude Desktop Workstation"
-                  className="text-xs"
+                  placeholder="e.g. Antigravity Agent Local"
                 />
               </div>
 
-              <div>
-                <span className="text-xs font-medium text-text-secondary block mb-2">
-                  Granted Constitutional Permissions
-                </span>
-                <div className="space-y-2 rounded-panel border border-border bg-subtle/50 p-3 max-h-48 overflow-y-auto">
-                  {ALL_CONSTITUTIONAL_PERMISSIONS.map((perm) => {
-                    const isChecked = selectedPermissions.includes(perm.key);
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-text-primary">Constitutional Permissions</label>
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-1">
+                  {ALL_CONSTITUTIONAL_PERMISSIONS.map((p) => {
+                    const isChecked = selectedPermissions.includes(p.key);
                     return (
-                      <label key={perm.key} className="flex items-start gap-2.5 cursor-pointer text-xs">
+                      <label
+                        key={p.key}
+                        className={`flex items-start gap-2.5 p-2 rounded border cursor-pointer transition-colors ${
+                          isChecked ? "bg-accent-subtle/30 border-accent/40" : "bg-surface-raised border-border"
+                        }`}
+                      >
                         <input
                           type="checkbox"
+                          className="mt-0.5"
                           checked={isChecked}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedPermissions([...selectedPermissions, perm.key]);
+                              setSelectedPermissions([...selectedPermissions, p.key]);
                             } else {
-                              setSelectedPermissions(selectedPermissions.filter((p) => p !== perm.key));
+                              setSelectedPermissions(selectedPermissions.filter((k) => k !== p.key));
                             }
                           }}
-                          className="mt-0.5 rounded-control text-accent focus:ring-accent"
                         />
-                        <div>
-                          <span className="font-semibold text-text-primary block">{perm.label}</span>
-                          <span className="text-[11px] text-text-tertiary">{perm.desc}</span>
+                        <div className="text-xs">
+                          <span className="font-medium text-text-primary block">{p.label}</span>
+                          <span className="text-[11px] text-text-secondary">{p.desc}</span>
                         </div>
                       </label>
                     );
@@ -732,112 +926,56 @@ export function IntegrationsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-medium text-text-secondary block">Rate Limit</span>
-                  <span className="text-[11px] text-text-tertiary">Maximum tool calls per minute</span>
-                </div>
-                <Input
-                  type="number"
-                  value={rateLimit}
-                  onChange={(e) => setRateLimit(Math.max(1, parseInt(e.target.value) || 60))}
-                  className="w-24 text-xs h-8"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                <Button variant="ghost" size="sm" onClick={() => setIsConnectOpen(false)}>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => setIsAiConnectOpen(false)}>
                   Cancel
                 </Button>
-                <Button variant="default" size="sm" onClick={handleGenerateToken} className="gap-1.5">
-                  Generate Scoped Token <ArrowRight className="h-3.5 w-3.5" />
+                <Button variant="default" size="sm" onClick={handleGenerateToken}>
+                  Generate Token
                 </Button>
               </div>
             </div>
-          )}
-
-          {/* STEP 2: TOKEN GENERATION & ONE-TIME COPY */}
-          {connectStep === 2 && generatedSecretToken && (
+          ) : (
             <div className="space-y-4 py-2">
-              <div className="rounded-panel border border-warning/30 bg-warning-subtle p-3 flex items-start gap-2.5">
-                <ShieldAlert className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                <div className="text-xs text-text-primary">
-                  <span className="font-semibold block text-warning">Copy your Bearer Token now</span>
-                  This secret token is stored only as a cryptographic SHA-256 hash in the database and will NEVER be shown again.
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-text-secondary block mb-1">
-                  Bearer Token Secret
-                </label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    readOnly
-                    value={generatedSecretToken}
-                    className="font-mono text-xs bg-canvas"
-                  />
+              <div className="bg-success-subtle/40 border border-success/30 rounded-panel p-3">
+                <span className="text-xs font-semibold text-success block mb-1">
+                  Token Generated Successfully
+                </span>
+                <p className="text-xs text-text-secondary">
+                  Copy this token now. It will never be shown again.
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Input value={generatedSecretToken || ""} readOnly className="font-mono text-xs" />
                   <Button
                     variant="outline"
                     size="sm"
-                    className="gap-1 text-xs shrink-0"
-                    onClick={() => copyToClipboard(generatedSecretToken, setCopiedToken)}
+                    onClick={() => copyToClipboard(generatedSecretToken || "", setCopiedToken)}
                   >
                     {copiedToken ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copiedToken ? "Copied" : "Copy"}
                   </Button>
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                <Button variant="default" size="sm" onClick={() => setConnectStep(3)} className="gap-1.5">
-                  View Client Setup Instructions <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: CLIENT INSTRUCTIONS & RULES */}
-          {connectStep === 3 && clientConfig && (
-            <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto">
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-text-primary">
-                    1. Configuration File ({clientConfig.config_file})
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px] gap-1"
-                    onClick={() => copyToClipboard(clientConfig.config_snippet, setCopiedConfig)}
-                  >
-                    {copiedConfig ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
-                    {copiedConfig ? "Copied" : "Copy Config"}
-                  </Button>
+              {clientConfig && (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-text-primary">Client Configuration</label>
+                  <CodeBlock code={clientConfig.config_snippet} language="json" />
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(clientConfig.config_snippet, setCopiedSnippet)}
+                      className="gap-1.5 text-xs"
+                    >
+                      {copiedSnippet ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+                      Copy Snippet
+                    </Button>
+                  </div>
                 </div>
-                <CodeBlock code={clientConfig.config_snippet} language="json" />
-              </div>
+              )}
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-text-primary">
-                    2. Recommended Rules ({clientConfig.rules_file})
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-[11px] gap-1"
-                    onClick={() => copyToClipboard(clientConfig.rules_snippet, setCopiedRules)}
-                  >
-                    {copiedRules ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
-                    {copiedRules ? "Copied" : "Copy Rules"}
-                  </Button>
-                </div>
-                <CodeBlock code={clientConfig.rules_snippet} language="markdown" />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                <Button variant="default" size="sm" onClick={() => setIsConnectOpen(false)}>
+              <div className="flex justify-end pt-2">
+                <Button variant="default" size="sm" onClick={() => setIsAiConnectOpen(false)}>
                   Done
                 </Button>
               </div>
@@ -845,6 +983,19 @@ export function IntegrationsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* LOCAL PROJECT AGENT PAIRING WIZARD */}
+      {projectId && (
+        <LocalProjectWizard
+          projectId={projectId}
+          isOpen={isWizardOpen}
+          onClose={() => setIsWizardOpen(false)}
+          onPaired={() => {
+            setIsWizardOpen(false);
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }

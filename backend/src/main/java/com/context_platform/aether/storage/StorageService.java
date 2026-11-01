@@ -7,5 +7,6 @@ public interface StorageService {
     byte[] retrieve(UUID projectId, String storageKey, String expectedHash);
     void verifyIntegrity(UUID projectId, String storageKey, String expectedHash);
     String computeSha256(byte[] content);
+    void deleteProjectData(UUID projectId);
 }
 

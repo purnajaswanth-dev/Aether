@@ -16,3 +16,4 @@ public record JsonRpcRequest(
         return id == null;
     }
 }
+

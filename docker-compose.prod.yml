@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aether-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-aether}
+      POSTGRES_USER: ${POSTGRES_USER:-aether}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aether_secure_production_password}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aether} -d ${POSTGRES_DB:-aether}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aether-prod-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aether}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-aether}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-aether_secure_production_password}
+      AETHER_JWT_SECRET: ${AETHER_JWT_SECRET:-9f8e7d6c5b4a3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b}
+      AETHER_MASTER_KEY: ${AETHER_MASTER_KEY:-e2a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7}
+      AETHER_STORAGE_LOCAL_PATH: /app/data/artifacts
+      SPRING_PROFILES_ACTIVE: prod
+    volumes:
+      - artifact_storage_prod:/app/data/artifacts
+      - backend_logs_prod:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 1024M
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aether-prod-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${PORT:-80}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80/"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+volumes:
+  pgdata_prod:
+    name: aether_pgdata_prod
+  artifact_storage_prod:
+    name: aether_artifact_storage_prod
+  backend_logs_prod:
+    name: aether_backend_logs_prod
+

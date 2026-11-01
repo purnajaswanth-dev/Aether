@@ -88,6 +88,23 @@ public class McpTokenService {
         tokenRepository.revokeToken(tokenId, projectId);
     }
 
+    public CreateMcpTokenResponse rotateToken(UUID tokenId, UUID projectId) {
+        McpToken oldToken = tokenRepository.findById(tokenId)
+            .filter(t -> t.projectId().equals(projectId))
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Token not found"));
+
+        tokenRepository.revokeToken(tokenId, projectId);
+
+        CreateMcpTokenRequest request = new CreateMcpTokenRequest(
+            oldToken.tokenName() + " (Rotated)",
+            oldToken.clientPlatform(),
+            oldToken.permissions(),
+            oldToken.rateLimitPerMinute(),
+            oldToken.expiresAt()
+        );
+        return createToken(projectId, request);
+    }
+
     public void setPaused(UUID tokenId, UUID projectId, boolean paused) {
         tokenRepository.setPaused(tokenId, projectId, paused);
     }
@@ -205,3 +222,4 @@ public class McpTokenService {
         };
     }
 }
+

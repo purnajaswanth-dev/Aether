@@ -6,3 +6,4 @@ public enum McpClientPlatform {
     ANTIGRAVITY,
     OTHER
 }
+

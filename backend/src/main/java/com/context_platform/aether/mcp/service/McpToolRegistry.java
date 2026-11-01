@@ -5,19 +5,41 @@ import com.context_platform.aether.common.ActorContext;
 import com.context_platform.aether.common.ApiException;
 import com.context_platform.aether.decision.*;
 import com.context_platform.aether.event.TimelineService;
+import com.context_platform.aether.ingestion.model.ArtifactChunk;
+import com.context_platform.aether.ingestion.service.ArtifactChunkRepository;
+import com.context_platform.aether.integration.model.AgentFileMetadataRecord;
+import com.context_platform.aether.integration.model.DeploymentRecord;
+import com.context_platform.aether.integration.repository.AgentFileMetadataRepository;
+import com.context_platform.aether.integration.repository.DeploymentRepository;
 import com.context_platform.aether.mcp.model.McpToolDefinition;
 import com.context_platform.aether.mcp.model.McpToken;
 import com.context_platform.aether.mcp.security.McpSecurityService;
 import com.context_platform.aether.mcp.security.McpTokenContext;
+import com.context_platform.aether.orchestrator.model.ContextPackageResponse;
+import com.context_platform.aether.orchestrator.service.ContextOrchestratorService;
 import com.context_platform.aether.project.Project;
 import com.context_platform.aether.project.ProjectRepository;
+import com.context_platform.aether.retrieval.model.SearchResultItem;
+import com.context_platform.aether.retrieval.service.HybridRetrievalEngine;
+import com.context_platform.aether.storage.StorageService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.context_platform.aether.workflow.model.ActorType;
+import com.context_platform.aether.workflow.model.TaskStatus;
+import com.context_platform.aether.workflow.model.dto.RecordImplementationRequest;
+import com.context_platform.aether.workflow.model.dto.RecordTestExecutionRequest;
+import com.context_platform.aether.workflow.model.dto.UpdateTaskStatusRequest;
+import com.context_platform.aether.workflow.repository.CodeDependencyRepository;
+import com.context_platform.aether.workflow.repository.TaskRepository;
+import com.context_platform.aether.workflow.service.AgentTrackingService;
+import com.context_platform.aether.workflow.service.CodeIntelligenceService;
+import com.context_platform.aether.workflow.service.TaskService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @Service
@@ -30,8 +52,19 @@ public class McpToolRegistry {
     private final DecisionRepository decisionRepository;
     private final TimelineService timelineService;
     private final McpSecurityService securityService;
+    private final HybridRetrievalEngine retrievalEngine;
+    private final ContextOrchestratorService orchestratorService;
+    private final ArtifactChunkRepository chunkRepository;
+    private final DeploymentRepository deploymentRepository;
+    private final AgentFileMetadataRepository agentFileMetadataRepository;
+    private final StorageService storageService;
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
+    private final TaskService taskService;
+    private final AgentTrackingService agentTrackingService;
+    private final CodeIntelligenceService codeIntelligenceService;
+    private final CodeDependencyRepository codeDependencyRepository;
+    private final TaskRepository taskRepository;
 
     public McpToolRegistry(
         ProjectRepository projectRepository,
@@ -41,8 +74,19 @@ public class McpToolRegistry {
         DecisionRepository decisionRepository,
         TimelineService timelineService,
         McpSecurityService securityService,
+        HybridRetrievalEngine retrievalEngine,
+        ContextOrchestratorService orchestratorService,
+        ArtifactChunkRepository chunkRepository,
+        DeploymentRepository deploymentRepository,
+        AgentFileMetadataRepository agentFileMetadataRepository,
+        StorageService storageService,
         JdbcClient jdbcClient,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        TaskService taskService,
+        AgentTrackingService agentTrackingService,
+        CodeIntelligenceService codeIntelligenceService,
+        CodeDependencyRepository codeDependencyRepository,
+        TaskRepository taskRepository
     ) {
         this.projectRepository = projectRepository;
         this.artifactService = artifactService;
@@ -51,8 +95,19 @@ public class McpToolRegistry {
         this.decisionRepository = decisionRepository;
         this.timelineService = timelineService;
         this.securityService = securityService;
+        this.retrievalEngine = retrievalEngine;
+        this.orchestratorService = orchestratorService;
+        this.chunkRepository = chunkRepository;
+        this.deploymentRepository = deploymentRepository;
+        this.agentFileMetadataRepository = agentFileMetadataRepository;
+        this.storageService = storageService;
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
+        this.taskService = taskService;
+        this.agentTrackingService = agentTrackingService;
+        this.codeIntelligenceService = codeIntelligenceService;
+        this.codeDependencyRepository = codeDependencyRepository;
+        this.taskRepository = taskRepository;
     }
 
     public List<McpToolDefinition> listToolDefinitions() {
@@ -89,11 +144,11 @@ public class McpToolRegistry {
             // 5. search_project_memory
             new McpToolDefinition(
                 "search_project_memory",
-                "Performs full-text search across all stored project artifacts, memory notes, and architectural decisions. Call this whenever you need to find existing patterns, technical conventions, or past decisions before proposing changes.",
+                "Performs hybrid retrieval (semantic pgvector + full-text/trigram keyword + structured SQL + graph) across all stored project artifacts, memory notes, and architectural decisions. Current approved decisions strictly outrank superseded/historical material. Call this whenever you need to find existing patterns, technical conventions, or past decisions before proposing changes.",
                 Map.of(
                     "type", "object",
                     "properties", Map.of(
-                        "query", Map.of("type", "string", "description", "Search keyword or phrase"),
+                        "query", Map.of("type", "string", "description", "Search keyword or natural language engineering query"),
                         "limit", Map.of("type", "integer", "description", "Maximum results to return (default 10)")
                     ),
                     "required", List.of("query")
@@ -222,6 +277,204 @@ public class McpToolRegistry {
                     ),
                     "required", List.of("artifact_id", "artifact_version", "finding_title", "finding_details", "severity")
                 )
+            ),
+            // 14. get_context
+            new McpToolDefinition(
+                "get_context",
+                "Retrieves an intelligent, token-budgeted, version-verified context package tailored to the specific engineering task (architecture review, implementation, debugging, testing, deployment). Automatically manages memory levels, outranks superseded versions, and provides an index of omitted items for staged retrieval.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "task", Map.of("type", "string", "description", "Specific task description or prompt to prepare context for"),
+                        "target_model", Map.of("type", "string", "description", "Target model name (e.g. claude-3-5-sonnet, gpt-4o, gemini-1.5-pro, default)"),
+                        "budget", Map.of("type", "integer", "description", "Optional token budget limit")
+                    ),
+                    "required", List.of("task")
+                )
+            ),
+            // 15. expand_chunk
+            new McpToolDefinition(
+                "expand_chunk",
+                "Expands a specific chunk ID returned by search_project_memory or get_context to view the full section or original artifact with highlighted source span and surrounding context.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "chunk_id", Map.of("type", "string", "description", "UUID of the chunk to expand")
+                    ),
+                    "required", List.of("chunk_id")
+                )
+            ),
+            // 16. get_latest_deployment
+            new McpToolDefinition(
+                "get_latest_deployment",
+                "Retrieves the most recent deployment record for the project, including status, commit SHA, failure classification, and timestamps.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "project", Map.of("type", "string", "description", "Optional project ID or name"),
+                        "env", Map.of("type", "string", "description", "Optional environment filter, e.g. production, staging")
+                    )
+                )
+            ),
+            // 17. get_deployment_status
+            new McpToolDefinition(
+                "get_deployment_status",
+                "Retrieves the execution status, environment, and error classification of a specific deployment.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "deploy_id", Map.of("type", "string", "description", "The external deployment ID (e.g. Render dep-xxx or UUID)")
+                    ),
+                    "required", List.of("deploy_id")
+                )
+            ),
+            // 18. get_deployment_logs
+            new McpToolDefinition(
+                "get_deployment_logs",
+                "Retrieves build or runtime deployment logs with extracted error highlights and redaction. Requires READ_DEPLOYMENT_DATA permission.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "deploy_id", Map.of("type", "string", "description", "The deployment ID to fetch logs for"),
+                        "tail_lines", Map.of("type", "integer", "description", "Optional number of trailing log lines to return (default 100)")
+                    ),
+                    "required", List.of("deploy_id")
+                )
+            ),
+            // 19. get_previous_failures
+            new McpToolDefinition(
+                "get_previous_failures",
+                "Retrieves historical deployment and build failures with their failure classifications and extracted error messages.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "project", Map.of("type", "string", "description", "Optional project ID or name"),
+                        "limit", Map.of("type", "integer", "description", "Optional maximum number of failures to return (default 10)")
+                    )
+                )
+            ),
+            // 20. get_relevant_files
+            new McpToolDefinition(
+                "get_relevant_files",
+                "Finds relevant workspace files and symbols indexed by the local project agent or stored project artifacts.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "query", Map.of("type", "string", "description", "Search query or file pattern (e.g. 'controller', 'UserService.java')"),
+                        "limit", Map.of("type", "integer", "description", "Optional maximum number of files to return (default 20)")
+                    )
+                )
+            ),
+            // 21. update_task_status
+            new McpToolDefinition(
+                "update_task_status",
+                "Transitions task lifecycle status enforcing optimistic locking and constitutional evidence rules. Note: Agents claiming VERIFIED without passing test execution evidence are automatically coerced to DONE_UNVERIFIED.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "task_id", Map.of("type", "string", "description", "UUID of the task to update"),
+                        "new_status", Map.of("type", "string", "description", "Target status: READY, IN_PROGRESS, IN_REVIEW, BLOCKED, DONE_UNVERIFIED, VERIFIED, CANCELLED"),
+                        "expected_lock_version", Map.of("type", "integer", "description", "Expected optimistic lock version of the task"),
+                        "reason", Map.of("type", "string", "description", "Reason for the status transition"),
+                        "human_override_reason", Map.of("type", "string", "description", "Explicit human justification if overriding evidence rules")
+                    ),
+                    "required", List.of("task_id", "new_status", "expected_lock_version")
+                )
+            ),
+            // 22. record_implementation_result
+            new McpToolDefinition(
+                "record_implementation_result",
+                "Records an agent implementation summary, touched files, and unresolved issues. Automatically transitions task to DONE_UNVERIFIED candidate status.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "task_id", Map.of("type", "string", "description", "UUID of the task being implemented"),
+                        "summary", Map.of("type", "string", "description", "Concise summary of implementation changes and reasoning"),
+                        "modified_files", Map.of("type", "array", "items", Map.of("type", "string"), "description", "List of modified or created file paths"),
+                        "unresolved_issues", Map.of("type", "array", "items", Map.of("type", "string"), "description", "Remaining known issues or next steps"),
+                        "session_id", Map.of("type", "string", "description", "Optional agent session UUID")
+                    ),
+                    "required", List.of("task_id", "summary")
+                )
+            ),
+            // 23. record_test_result
+            new McpToolDefinition(
+                "record_test_result",
+                "Records structured test execution metrics and raw log outputs as immutable verification evidence. Allows tasks to reach VERIFIED status.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "task_id", Map.of("type", "string", "description", "UUID of the task to verify"),
+                        "test_type", Map.of("type", "string", "description", "Test category, e.g. UNIT, INTEGRATION, E2E, CONTRACT"),
+                        "framework", Map.of("type", "string", "description", "Test framework used, e.g. JUNIT5, VITEST, GO_TEST"),
+                        "passed", Map.of("type", "boolean", "description", "Whether the overall test run passed"),
+                        "total_tests", Map.of("type", "integer", "description", "Total test count"),
+                        "passed_tests", Map.of("type", "integer", "description", "Passed test count"),
+                        "failed_tests", Map.of("type", "integer", "description", "Failed test count"),
+                        "duration_ms", Map.of("type", "integer", "description", "Test suite execution time in milliseconds"),
+                        "error_summary", Map.of("type", "string", "description", "Summary of any failed test cases or assertion messages"),
+                        "raw_logs", Map.of("type", "string", "description", "Raw terminal output or log text to store as verification evidence artifact")
+                    ),
+                    "required", List.of("task_id", "passed", "total_tests", "passed_tests", "failed_tests")
+                )
+            ),
+            // 24. get_task_context
+            new McpToolDefinition(
+                "get_task_context",
+                "Retrieves the complete task context, including requirements, linked approved decisions, relevant artifacts, latest implementation claims, and prior debugging attempts.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "task_id", Map.of("type", "string", "description", "UUID of the task")
+                    ),
+                    "required", List.of("task_id")
+                )
+            ),
+            // 25. get_api_contract
+            new McpToolDefinition(
+                "get_api_contract",
+                "Retrieves OpenAPI schemas, REST endpoints, and API contracts stored in project artifacts.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "query", Map.of("type", "string", "description", "Endpoint path, schema name, or search keyword")
+                    )
+                )
+            ),
+            // 26. get_project_dependencies
+            new McpToolDefinition(
+                "get_project_dependencies",
+                "Retrieves dependencies and package relationships indexed from project manifests (pom.xml, package.json).",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "source_path", Map.of("type", "string", "description", "Optional file path to inspect dependencies for")
+                    )
+                )
+            ),
+            // 27. analyze_change_impact
+            new McpToolDefinition(
+                "analyze_change_impact",
+                "Predicts the blast radius of code changes across affected modules, API controllers, tests, and tasks with explicit confidence ratings.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "modified_files", Map.of("type", "array", "items", Map.of("type", "string"), "description", "List of modified or target file paths")
+                    ),
+                    "required", List.of("modified_files")
+                )
+            ),
+            // 28. get_relevant_tests
+            new McpToolDefinition(
+                "get_relevant_tests",
+                "Identifies relevant test suites and test classes covering modified files or changed symbols.",
+                Map.of(
+                    "type", "object",
+                    "properties", Map.of(
+                        "modified_files", Map.of("type", "array", "items", Map.of("type", "string"), "description", "List of modified or target file paths")
+                    ),
+                    "required", List.of("modified_files")
+                )
             )
         );
     }
@@ -241,6 +494,21 @@ public class McpToolRegistry {
             case "save_conversation_output" -> executeSaveConversationOutput(args, token);
             case "record_decision" -> executeRecordDecision(args, token);
             case "record_review_finding" -> executeRecordReviewFinding(args, token);
+            case "get_context" -> executeGetContext(args, token);
+            case "expand_chunk" -> executeExpandChunk(args, token);
+            case "get_latest_deployment" -> executeGetLatestDeployment(args, token);
+            case "get_deployment_status" -> executeGetDeploymentStatus(args, token);
+            case "get_deployment_logs" -> executeGetDeploymentLogs(args, token);
+            case "get_previous_failures" -> executeGetPreviousFailures(args, token);
+            case "get_relevant_files" -> executeGetRelevantFiles(args, token);
+            case "update_task_status" -> executeUpdateTaskStatus(args, token);
+            case "record_implementation_result" -> executeRecordImplementationResult(args, token);
+            case "record_test_result" -> executeRecordTestResult(args, token);
+            case "get_task_context" -> executeGetTaskContext(args, token);
+            case "get_api_contract" -> executeGetApiContract(args, token);
+            case "get_project_dependencies" -> executeGetProjectDependencies(args, token);
+            case "analyze_change_impact" -> executeAnalyzeChangeImpact(args, token);
+            case "get_relevant_tests" -> executeGetRelevantTests(args, token);
             default -> throw new ApiException(HttpStatus.NOT_FOUND, "Unknown tool: " + toolName);
         };
     }
@@ -347,27 +615,105 @@ public class McpToolRegistry {
             limit = Math.min(Math.max(num.intValue(), 1), 50);
         }
 
-        String searchPattern = "%" + query + "%";
-        String sql = """
-            SELECT id, title, artifact_type, created_at
-            FROM artifacts
-            WHERE project_id = ? AND (title ILIKE ? OR artifact_type ILIKE ?)
-            ORDER BY created_at DESC LIMIT ?
-        """;
-        var results = jdbcClient.sql(sql)
-            .param(token.projectId())
-            .param(searchPattern)
-            .param(searchPattern)
-            .param(limit)
-            .query((rs, rowNum) -> Map.of(
-                "id", rs.getObject("id", UUID.class).toString(),
-                "title", rs.getString("title"),
-                "artifact_type", rs.getString("artifact_type"),
-                "created_at", rs.getTimestamp("created_at").toInstant().toString()
-            ))
-            .list();
+        List<SearchResultItem> items = retrievalEngine.search(token.projectId(), query, limit);
+        return items.stream().map(item -> Map.of(
+            "chunk_id", item.chunkId().toString(),
+            "artifact_id", item.artifactId().toString(),
+            "version", item.artifactVersion(),
+            "title", item.title(),
+            "section_path", item.parentSectionPath(),
+            "chunk_type", item.chunkType().name(),
+            "approval_state", item.approvalState(),
+            "is_superseded", item.isSuperseded(),
+            "rrf_score", item.rrfScore(),
+            "content", item.untrustedFormattedContent()
+        )).toList();
+    }
 
-        return results;
+    private Object executeGetContext(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        if (args == null || args.get("task") == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Parameter 'task' is required for get_context");
+        }
+
+        String task = args.get("task").toString().trim();
+        String targetModel = args.get("target_model") != null ? args.get("target_model").toString().trim() : null;
+        Integer budget = args.get("budget") instanceof Number num ? num.intValue() : null;
+
+        ContextPackageResponse pkg = orchestratorService.buildContextPackage(
+            token.projectId(),
+            token.clientPlatform().name(),
+            task,
+            targetModel,
+            budget
+        );
+
+        return Map.of(
+            "package_id", pkg.packageId().toString(),
+            "request_type", pkg.requestType().name(),
+            "target_model", pkg.targetModel(),
+            "token_budget", pkg.tokenBudget(),
+            "estimated_tokens", pkg.estimatedTokens(),
+            "formatted_package", pkg.formattedPackage(),
+            "sections", pkg.sections(),
+            "omitted_items", pkg.omittedItems()
+        );
+    }
+
+    private Object executeExpandChunk(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_ARTIFACTS");
+        if (args == null || args.get("chunk_id") == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Parameter 'chunk_id' is required for expand_chunk");
+        }
+
+        UUID chunkId = UUID.fromString(args.get("chunk_id").toString().trim());
+        ArtifactChunk chunk = chunkRepository.findById(chunkId)
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Chunk not found: " + chunkId));
+
+        if (!chunk.projectId().equals(token.projectId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Chunk does not belong to this project");
+        }
+
+        // Retrieve full original artifact
+        ArtifactVersion version = artifactRepository.getVersion(chunk.artifactId(), chunk.artifactVersion(), token.projectId())
+            .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Artifact version not found"));
+
+        String rawOriginal = artifactService.resolveContentAndVerifyHash(token.projectId(), version);
+
+        String highlightedView = formatUntrustedData(
+            chunk.artifactId().toString(),
+            chunk.artifactVersion(),
+            chunk.contentHash(),
+            "AETHER_EXPANDED_CHUNK",
+            """
+            [SECTION PATH: %s]
+            [LINES %d - %d, OFFSETS %d - %d]
+            <<<CHUNK_SPAN>>>
+            %s
+            <<<END_CHUNK_SPAN>>>
+
+            --- FULL ORIGINAL ARTIFACT CONTENT ---
+            %s
+            """.formatted(
+                chunk.parentSectionPath(),
+                chunk.startLine(), chunk.endLine(),
+                chunk.startOffset(), chunk.endOffset(),
+                chunk.content(),
+                rawOriginal
+            )
+        );
+
+        return Map.of(
+            "chunk_id", chunk.id().toString(),
+            "artifact_id", chunk.artifactId().toString(),
+            "version", chunk.artifactVersion(),
+            "parent_section_path", chunk.parentSectionPath(),
+            "chunk_type", chunk.chunkType().name(),
+            "start_line", chunk.startLine(),
+            "end_line", chunk.endLine(),
+            "content", chunk.content(),
+            "expanded_view", highlightedView
+        );
     }
 
     private Object executeGetOriginalArtifact(Map<String, Object> args, McpToken token) {
@@ -720,6 +1066,425 @@ public class McpToolRegistry {
         } catch (JsonProcessingException e) {
             return List.of();
         }
+    }
+
+    private Object executeGetLatestDeployment(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        String env = args.get("env") != null ? args.get("env").toString() : null;
+
+        var deployOpt = deploymentRepository.findLatest(token.projectId(), env);
+        if (deployOpt.isEmpty()) {
+            return Map.of("message", "No deployments recorded for project" + (env != null ? " in env " + env : ""));
+        }
+
+        DeploymentRecord deploy = deployOpt.get();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("deployment_id", deploy.id().toString());
+        result.put("external_deploy_id", deploy.externalDeployId());
+        result.put("provider", deploy.provider().name());
+        result.put("service_id", deploy.serviceId());
+        result.put("environment", deploy.environment());
+        result.put("status", deploy.status());
+        result.put("failure_classification", deploy.failureClassification() != null ? deploy.failureClassification() : "NONE");
+        result.put("commit_sha", deploy.commitSha() != null ? deploy.commitSha() : "");
+        result.put("started_at", deploy.deployStartedAt() != null ? deploy.deployStartedAt().toString() : "");
+        result.put("finished_at", deploy.deployFinishedAt() != null ? deploy.deployFinishedAt().toString() : "");
+        result.put("extracted_errors", deploy.extractedErrors());
+        return result;
+    }
+
+    private Object executeGetDeploymentStatus(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        if (args.get("deploy_id") == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "deploy_id parameter is required");
+        }
+        String deployId = args.get("deploy_id").toString();
+
+        var deployOpt = deploymentRepository.findByExternalDeployId(token.projectId(), deployId);
+        if (deployOpt.isEmpty()) {
+            try {
+                UUID uid = UUID.fromString(deployId);
+                deployOpt = deploymentRepository.findById(uid);
+            } catch (IllegalArgumentException ignored) {}
+        }
+
+        if (deployOpt.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Deployment not found: " + deployId);
+        }
+
+        DeploymentRecord deploy = deployOpt.get();
+        return Map.of(
+            "deployment_id", deploy.id().toString(),
+            "external_deploy_id", deploy.externalDeployId(),
+            "provider", deploy.provider().name(),
+            "service_id", deploy.serviceId(),
+            "environment", deploy.environment(),
+            "status", deploy.status(),
+            "failure_classification", deploy.failureClassification() != null ? deploy.failureClassification() : "NONE",
+            "extracted_errors", deploy.extractedErrors(),
+            "started_at", deploy.deployStartedAt() != null ? deploy.deployStartedAt().toString() : "",
+            "finished_at", deploy.deployFinishedAt() != null ? deploy.deployFinishedAt().toString() : ""
+        );
+    }
+
+    private Object executeGetDeploymentLogs(Map<String, Object> args, McpToken token) {
+        // Enforce Constitution Permission Check: READ_DEPLOYMENT_DATA
+        securityService.enforcePermission(token, "READ_DEPLOYMENT_DATA");
+
+        if (args.get("deploy_id") == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "deploy_id parameter is required");
+        }
+        String deployId = args.get("deploy_id").toString();
+        int tailLines = 100;
+        if (args.get("tail_lines") instanceof Number num) {
+            tailLines = num.intValue();
+        }
+
+        var deployOpt = deploymentRepository.findByExternalDeployId(token.projectId(), deployId);
+        if (deployOpt.isEmpty()) {
+            try {
+                UUID uid = UUID.fromString(deployId);
+                deployOpt = deploymentRepository.findById(uid);
+            } catch (IllegalArgumentException ignored) {}
+        }
+
+        if (deployOpt.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Deployment not found: " + deployId);
+        }
+
+        DeploymentRecord deploy = deployOpt.get();
+        if (deploy.buildLogsArtifactId() == null) {
+            return Map.of(
+                "deployment_id", deploy.id().toString(),
+                "external_deploy_id", deploy.externalDeployId(),
+                "status", deploy.status(),
+                "logs", "No logs recorded for deployment " + deployId
+            );
+        }
+
+        var versionOpt = artifactRepository.getLatestVersion(deploy.buildLogsArtifactId(), token.projectId());
+        String rawLogs = "Log artifact version not found.";
+        if (versionOpt.isPresent()) {
+            var ver = versionOpt.get();
+            if (ver.content() != null) {
+                rawLogs = ver.content();
+            } else if (ver.storageKey() != null) {
+                byte[] bytes = storageService.retrieve(token.projectId(), ver.storageKey(), ver.contentHash());
+                rawLogs = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+            }
+        }
+
+        // Tail if requested
+        if (tailLines > 0 && rawLogs != null) {
+            String[] lines = rawLogs.split("\r?\n");
+            if (lines.length > tailLines) {
+                StringBuilder sb = new StringBuilder();
+                for (int i = lines.length - tailLines; i < lines.length; i++) {
+                    sb.append(lines[i]).append("\n");
+                }
+                rawLogs = sb.toString();
+            }
+        }
+
+        String safeLogs = formatUntrustedData(
+            deploy.buildLogsArtifactId().toString(),
+            1,
+            "logs",
+            deploy.provider().name(),
+            rawLogs
+        );
+
+        return Map.of(
+            "deployment_id", deploy.id().toString(),
+            "external_deploy_id", deploy.externalDeployId(),
+            "status", deploy.status(),
+            "failure_classification", deploy.failureClassification() != null ? deploy.failureClassification() : "NONE",
+            "extracted_errors", deploy.extractedErrors(),
+            "logs", safeLogs
+        );
+    }
+
+    private Object executeGetPreviousFailures(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        int limit = 10;
+        if (args.get("limit") instanceof Number num) {
+            limit = num.intValue();
+        }
+
+        List<DeploymentRecord> failures = deploymentRepository.findFailures(token.projectId(), limit);
+        List<Map<String, Object>> failureList = failures.stream().map(f -> Map.<String, Object>of(
+            "deployment_id", f.id().toString(),
+            "external_deploy_id", f.externalDeployId(),
+            "provider", f.provider().name(),
+            "service_id", f.serviceId(),
+            "status", f.status(),
+            "failure_classification", f.failureClassification() != null ? f.failureClassification() : "UNKNOWN",
+            "extracted_errors", f.extractedErrors(),
+            "finished_at", f.deployFinishedAt() != null ? f.deployFinishedAt().toString() : ""
+        )).toList();
+
+        return Map.of(
+            "count", failureList.size(),
+            "failures", failureList
+        );
+    }
+
+    private Object executeGetRelevantFiles(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        String query = args.get("query") != null ? args.get("query").toString() : "";
+        int limit = 20;
+        if (args.get("limit") instanceof Number num) {
+            limit = num.intValue();
+        }
+
+        // Try local agent indexed files first
+        List<AgentFileMetadataRecord> agentFiles = agentFileMetadataRepository.findRelevant(token.projectId(), query, limit);
+        if (!agentFiles.isEmpty()) {
+            List<Map<String, Object>> fileList = agentFiles.stream().map(af -> Map.<String, Object>of(
+                "path", af.relativePath(),
+                "file_size", af.fileSizeBytes(),
+                "language", af.language() != null ? af.language() : "unknown",
+                "symbols", af.symbols(),
+                "content_hash", af.contentHash(),
+                "source", "LOCAL_AGENT"
+            )).toList();
+
+            return Map.of(
+                "source", "LOCAL_AGENT_INDEX",
+                "count", fileList.size(),
+                "files", fileList
+            );
+        }
+
+        // Fallback to project artifacts
+        List<Artifact> artifacts = artifactRepository.listArtifacts(token.projectId(), null, null, null);
+        String finalQuery = query.toLowerCase();
+        List<Map<String, Object>> matching = artifacts.stream()
+            .filter(a -> a.title().toLowerCase().contains(finalQuery) || a.artifactType().toLowerCase().contains(finalQuery))
+            .limit(limit)
+            .map(a -> Map.<String, Object>of(
+                "artifact_id", a.id().toString(),
+                "title", a.title(),
+                "type", a.artifactType(),
+                "source", a.sourcePlatform() != null ? a.sourcePlatform() : "AETHER"
+            ))
+            .toList();
+
+        return Map.of(
+            "source", "PROJECT_ARTIFACTS",
+            "count", matching.size(),
+            "files", matching
+        );
+    }
+
+    private String requireString(Map<String, Object> args, String key) {
+        if (args == null || args.get(key) == null || args.get(key).toString().isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Missing required argument: " + key);
+        }
+        return args.get(key).toString();
+    }
+
+    private Object executeUpdateTaskStatus(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "SAVE_ARTIFACTS");
+        String taskIdStr = requireString(args, "task_id");
+        String newStatusStr = requireString(args, "new_status");
+        int lockVersion = args.get("expected_lock_version") instanceof Number n ? n.intValue() : 1;
+        String reason = args.get("reason") != null ? args.get("reason").toString() : "Updated via MCP";
+        String humanOverride = args.get("human_override_reason") != null ? args.get("human_override_reason").toString() : null;
+
+        UUID taskId = UUID.fromString(taskIdStr);
+        TaskStatus targetStatus = TaskStatus.valueOf(newStatusStr.toUpperCase());
+
+        var updated = taskService.updateTaskStatus(
+                token.projectId(),
+                taskId,
+                new UpdateTaskStatusRequest(targetStatus, lockVersion, reason, humanOverride, ActorType.AGENT, token.tokenName())
+        );
+
+        return Map.of(
+                "task_id", updated.id().toString(),
+                "status", updated.status().name(),
+                "lock_version", updated.lockVersion(),
+                "message", updated.status() == TaskStatus.DONE_UNVERIFIED && targetStatus == TaskStatus.VERIFIED
+                        ? "Coerced to DONE_UNVERIFIED. Verification requires passing test evidence."
+                        : "Task status updated to " + updated.status().name()
+        );
+    }
+
+    private Object executeRecordImplementationResult(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "SAVE_ARTIFACTS");
+        String taskIdStr = requireString(args, "task_id");
+        String summary = requireString(args, "summary");
+
+        List<String> modifiedFiles = List.of();
+        if (args.get("modified_files") instanceof List<?> list) {
+            modifiedFiles = list.stream().map(Object::toString).toList();
+        }
+
+        List<String> unresolvedIssues = List.of();
+        if (args.get("unresolved_issues") instanceof List<?> list) {
+            unresolvedIssues = list.stream().map(Object::toString).toList();
+        }
+
+        UUID sessionId = null;
+        if (args.get("session_id") != null) {
+            try {
+                sessionId = UUID.fromString(args.get("session_id").toString());
+            } catch (Exception ignored) {}
+        }
+
+        UUID taskId = UUID.fromString(taskIdStr);
+        var record = agentTrackingService.recordImplementation(
+                token.projectId(),
+                taskId,
+                new RecordImplementationRequest(summary, modifiedFiles, unresolvedIssues, sessionId, token.tokenName())
+        );
+
+        return Map.of(
+                "implementation_id", record.id().toString(),
+                "task_id", record.taskId().toString(),
+                "candidate_status", record.candidateStatus(),
+                "modified_files_count", record.modifiedFiles().size(),
+                "unresolved_issues_count", record.unresolvedIssues().size(),
+                "message", "Implementation recorded. Task is now DONE_UNVERIFIED awaiting test verification."
+        );
+    }
+
+    private Object executeRecordTestResult(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "SAVE_ARTIFACTS");
+        String taskIdStr = requireString(args, "task_id");
+        boolean passed = args.get("passed") instanceof Boolean b ? b : Boolean.parseBoolean(String.valueOf(args.get("passed")));
+        int totalTests = args.get("total_tests") instanceof Number n ? n.intValue() : 0;
+        int passedTests = args.get("passed_tests") instanceof Number n ? n.intValue() : (passed ? totalTests : 0);
+        int failedTests = args.get("failed_tests") instanceof Number n ? n.intValue() : (passed ? 0 : totalTests - passedTests);
+        long durationMs = args.get("duration_ms") instanceof Number n ? n.longValue() : 0L;
+        String framework = args.get("framework") != null ? args.get("framework").toString() : "UNKNOWN";
+        String testType = args.get("test_type") != null ? args.get("test_type").toString() : "UNIT";
+        String errorSummary = args.get("error_summary") != null ? args.get("error_summary").toString() : null;
+        String rawLogs = args.get("raw_logs") != null ? args.get("raw_logs").toString() : null;
+
+        UUID taskId = UUID.fromString(taskIdStr);
+        var record = agentTrackingService.recordTestExecution(
+                token.projectId(),
+                taskId,
+                new RecordTestExecutionRequest(testType, framework, passed, totalTests, passedTests, failedTests, durationMs, errorSummary, rawLogs, null, token.tokenName())
+        );
+
+        return Map.of(
+                "test_execution_id", record.id().toString(),
+                "task_id", record.taskId().toString(),
+                "passed", record.passed(),
+                "passed_tests", record.passedTests(),
+                "total_tests", record.totalTests(),
+                "log_artifact_id", record.logArtifactId() != null ? record.logArtifactId().toString() : "NONE",
+                "message", record.passed() ? "Test evidence recorded. Task is eligible for VERIFIED status." : "Test failures recorded."
+        );
+    }
+
+    private Object executeGetTaskContext(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        String taskIdStr = requireString(args, "task_id");
+        UUID taskId = UUID.fromString(taskIdStr);
+
+        var ctx = taskService.getTaskContext(token.projectId(), taskId);
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("task", Map.of(
+                "id", ctx.task().id().toString(),
+                "number", ctx.task().taskNumber(),
+                "title", ctx.task().title(),
+                "description", ctx.task().description() != null ? ctx.task().description() : "",
+                "status", ctx.task().status().name(),
+                "priority", ctx.task().priority().name(),
+                "lock_version", ctx.task().lockVersion()
+        ));
+        res.put("linked_decisions", ctx.linkedDecisions());
+        res.put("relevant_artifacts", ctx.relevantArtifacts());
+        res.put("latest_implementation", ctx.latestImplementation());
+        res.put("prior_debugging_attempts", ctx.priorAttempts());
+        res.put("open_issues", ctx.openIssues());
+
+        return res;
+    }
+
+    private Object executeGetApiContract(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_ARTIFACTS");
+        String query = args != null && args.get("query") != null ? args.get("query").toString().toLowerCase() : "";
+
+        var artifacts = artifactRepository.listArtifacts(token.projectId(), null, null, null);
+        List<Map<String, Object>> contracts = new ArrayList<>();
+
+        for (var a : artifacts) {
+            if ("API_SPEC".equalsIgnoreCase(a.artifactType()) || a.title().toLowerCase().contains("openapi") || a.title().toLowerCase().contains("api")) {
+                try {
+                    var verOpt = artifactRepository.getLatestVersion(a.id(), token.projectId());
+                    if (verOpt.isPresent()) {
+                        byte[] content = storageService.retrieve(token.projectId(), verOpt.get().storageKey(), verOpt.get().contentHash());
+                        String spec = new String(content, StandardCharsets.UTF_8);
+                        if (query.isBlank() || spec.toLowerCase().contains(query)) {
+                            contracts.add(Map.of(
+                                    "artifact_id", a.id().toString(),
+                                    "title", a.title(),
+                                    "type", a.artifactType(),
+                                    "version", verOpt.get().version(),
+                                    "snippet", spec.length() > 2000 ? spec.substring(0, 2000) + "\n...[truncated]" : spec
+                            ));
+                        }
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        return Map.of("count", contracts.size(), "contracts", contracts);
+    }
+
+    private Object executeGetProjectDependencies(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        String sourcePath = args != null && args.get("source_path") != null ? args.get("source_path").toString() : null;
+
+        List<com.context_platform.aether.workflow.model.CodeDependencyRecord> deps;
+        if (sourcePath != null && !sourcePath.isBlank()) {
+            deps = codeDependencyRepository.findBySourcePath(token.projectId(), sourcePath);
+        } else {
+            deps = codeDependencyRepository.findAllForProject(token.projectId());
+        }
+
+        List<Map<String, Object>> list = deps.stream().map(d -> Map.<String, Object>of(
+                "source", d.sourcePath(),
+                "target", d.targetPath(),
+                "type", d.dependencyType(),
+                "confidence", d.confidence()
+        )).toList();
+
+        return Map.of("count", list.size(), "dependencies", list);
+    }
+
+    private Object executeAnalyzeChangeImpact(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        List<String> modifiedFiles = List.of();
+        if (args.get("modified_files") instanceof List<?> list) {
+            modifiedFiles = list.stream().map(Object::toString).toList();
+        }
+
+        var impact = codeIntelligenceService.analyzeChangeImpact(token.projectId(), modifiedFiles);
+        return Map.of(
+                "target_files", impact.targetFiles(),
+                "affected_modules", impact.affectedModules(),
+                "affected_apis", impact.affectedApis(),
+                "affected_tests", impact.affectedTests(),
+                "confidence_levels", impact.confidenceLevels(),
+                "reasoning_edges", impact.reasoningEdges()
+        );
+    }
+
+    private Object executeGetRelevantTests(Map<String, Object> args, McpToken token) {
+        securityService.enforcePermission(token, "READ_PROJECT_CONTEXT");
+        List<String> modifiedFiles = List.of();
+        if (args.get("modified_files") instanceof List<?> list) {
+            modifiedFiles = list.stream().map(Object::toString).toList();
+        }
+
+        var tests = codeIntelligenceService.getRelevantTests(token.projectId(), modifiedFiles);
+        return Map.of("count", tests.size(), "relevant_tests", tests);
     }
 
     public static String formatUntrustedData(String id, int version, String hash, String source, String content) {

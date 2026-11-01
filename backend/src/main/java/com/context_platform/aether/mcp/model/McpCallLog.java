@@ -14,3 +14,4 @@ public record McpCallLog(
     String errorMessage,
     Instant createdAt
 ) {}
+

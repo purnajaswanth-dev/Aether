@@ -16,3 +16,4 @@ public record CreateMcpTokenResponse(
     Instant expiresAt,
     Instant createdAt
 ) {}
+

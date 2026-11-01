@@ -9,3 +9,4 @@ public record McpToolDefinition(
     String description,
     Map<String, Object> inputSchema
 ) {}
+

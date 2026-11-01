@@ -12,3 +12,4 @@ public record CreateMcpTokenRequest(
     Integer rateLimitPerMinute,
     Instant expiresAt
 ) {}
+

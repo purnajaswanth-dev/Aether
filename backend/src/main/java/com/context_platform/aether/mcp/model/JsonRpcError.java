@@ -25,3 +25,4 @@ public record JsonRpcError(
         return new JsonRpcError(code, message, data);
     }
 }
+

@@ -41,5 +41,17 @@ public class AuditRepository {
         .query(AuditEvent.class)
         .list();
     }
+
+    public List<AuditEvent> listByProject(UUID projectId, int limit) {
+        return jdbcClient.sql("""
+            SELECT id, project_id, user_id, action, actor_type, ip_address, user_agent, details, created_at
+            FROM audit_events WHERE project_id = ?
+            ORDER BY created_at DESC LIMIT ?
+        """)
+        .param(projectId)
+        .param(limit)
+        .query(AuditEvent.class)
+        .list();
+    }
 }
 

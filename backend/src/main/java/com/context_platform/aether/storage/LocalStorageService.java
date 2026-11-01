@@ -108,5 +108,26 @@ public class LocalStorageService implements StorageService {
     private String sanitizeFilename(String filename) {
         return filename.replaceAll("[^a-zA-Z0-9._-]", "_");
     }
+
+    @Override
+    public void deleteProjectData(UUID projectId) {
+        if (projectId == null) return;
+        Path projectDir = rootPath.resolve(projectId.toString()).normalize();
+        if (projectDir.startsWith(rootPath) && Files.exists(projectDir)) {
+            try (var walk = Files.walk(projectDir)) {
+                walk.sorted(java.util.Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException e) {
+                            log.warn("Failed to delete file during project purge: {}", path, e);
+                        }
+                    });
+                log.info("Cleaned up filesystem storage for project {}", projectId);
+            } catch (IOException e) {
+                log.warn("Failed to clean up project directory: {}", projectDir, e);
+            }
+        }
+    }
 }
 

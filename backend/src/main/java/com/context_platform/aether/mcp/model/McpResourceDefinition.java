@@ -9,3 +9,4 @@ public record McpResourceDefinition(
     String description,
     String mimeType
 ) {}
+

@@ -4,6 +4,7 @@ import com.context_platform.aether.common.ActorContext;
 import com.context_platform.aether.common.ApiException;
 import com.context_platform.aether.common.ResourceNotFoundException;
 import com.context_platform.aether.event.TimelineService;
+import com.context_platform.aether.ingestion.service.IngestionService;
 import com.context_platform.aether.security.ProjectSecurityChecker;
 import com.context_platform.aether.storage.StorageResult;
 import com.context_platform.aether.storage.StorageService;
@@ -13,6 +14,8 @@ import com.github.difflib.patch.ChangeDelta;
 import com.github.difflib.patch.DeleteDelta;
 import com.github.difflib.patch.InsertDelta;
 import com.github.difflib.patch.Patch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,23 +29,26 @@ import java.util.UUID;
 @Service
 public class ArtifactService {
 
+    private static final Logger log = LoggerFactory.getLogger(ArtifactService.class);
     private static final int INLINE_BYTE_LIMIT = 256 * 1024; // 256 KB
 
     private final ArtifactRepository artifactRepository;
     private final StorageService storageService;
     private final TimelineService timelineService;
     private final ProjectSecurityChecker securityChecker;
+    private final IngestionService ingestionService;
 
     public ArtifactService(
-        ArtifactRepository artifactRepository,
-        StorageService storageService,
-        TimelineService timelineService,
-        ProjectSecurityChecker securityChecker
-    ) {
+            ArtifactRepository artifactRepository,
+            StorageService storageService,
+            TimelineService timelineService,
+            ProjectSecurityChecker securityChecker,
+            IngestionService ingestionService) {
         this.artifactRepository = artifactRepository;
         this.storageService = storageService;
         this.timelineService = timelineService;
         this.securityChecker = securityChecker;
+        this.ingestionService = ingestionService;
     }
 
     @Transactional
@@ -69,130 +75,161 @@ public class ArtifactService {
         String storageKey = storageResult.storageKey();
 
         Artifact artifact = artifactRepository.createArtifact(
-            projectId,
-            request.title(),
-            request.sourcePlatform(),
-            request.sourceReference(),
-            request.artifactType(),
-            null
-        );
+                projectId,
+                request.title(),
+                request.sourcePlatform(),
+                request.sourceReference(),
+                request.artifactType(),
+                null);
 
         ArtifactVersion version = artifactRepository.appendVersion(
-            artifact.id(),
-            projectId,
-            1,
-            inlineContent,
-            storageKey,
-            hash,
-            byteSize,
-            actor.actorId(),
-            actor.actorType().name(),
-            request.changeSummary() != null ? request.changeSummary() : "Initial version"
-        );
+                artifact.id(),
+                projectId,
+                1,
+                inlineContent,
+                storageKey,
+                hash,
+                byteSize,
+                actor.actorId(),
+                actor.actorType().name(),
+                request.changeSummary() != null ? request.changeSummary() : "Initial version");
 
         // Timeline event
         timelineService.append(
-            projectId,
-            null,
-            request.sourcePlatform(),
-            "ARTIFACT_SAVED",
-            artifact.id(),
-            null,
-            1,
-            "SUCCESS",
-            actor.actorId(),
-            actor.actorType().name(),
-            "Saved artifact '" + artifact.title() + "' (v1, " + byteSize + " bytes, hash " + hash.substring(0, 8) + "…)",
-            "{\"artifactId\":\"" + artifact.id() + "\",\"version\":1,\"hash\":\"" + hash + "\"}"
-        );
+                projectId,
+                null,
+                request.sourcePlatform(),
+                "ARTIFACT_SAVED",
+                artifact.id(),
+                null,
+                1,
+                "SUCCESS",
+                actor.actorId(),
+                actor.actorType().name(),
+                "Saved artifact '" + artifact.title() + "' (v1, " + byteSize + " bytes, hash " + hash.substring(0, 8)
+                        + "…)",
+                "{\"artifactId\":\"" + artifact.id() + "\",\"version\":1,\"hash\":\"" + hash + "\"}");
+
+        // Step 1 to 12 Ingestion Pipeline
+        try {
+            ingestionService.ingestArtifactVersion(
+                projectId,
+                artifact.id(),
+                1,
+                request.content(),
+                artifact.artifactType(),
+                artifact.title(),
+                request.sourcePlatform()
+            );
+        } catch (Exception ex) {
+            log.warn("Ingestion pipeline failed for artifact {} v1: {}", artifact.id(), ex.getMessage());
+        }
 
         return new ArtifactResponse(
-            artifact.id(),
-            projectId,
-            artifact.title(),
-            artifact.sourcePlatform(),
-            artifact.sourceReference(),
-            artifact.artifactType(),
-            artifact.relatedTaskId(),
-            1,
-            hash,
-            byteSize,
-            request.content(),
-            artifact.createdAt()
-        );
+                artifact.id(),
+                projectId,
+                artifact.title(),
+                artifact.sourcePlatform(),
+                artifact.sourceReference(),
+                artifact.artifactType(),
+                artifact.relatedTaskId(),
+                1,
+                hash,
+                byteSize,
+                request.content(),
+                artifact.createdAt());
     }
 
     @Transactional
-    public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request, UUID userId) {
+    public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request,
+            UUID userId) {
         securityChecker.verifyProjectAccess(projectId, userId, "MEMBER");
         ActorContext actor = securityChecker.getCurrentActor();
         return createVersionInternal(projectId, artifactId, request, actor);
     }
 
     @Transactional
-    public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request, ActorContext actor) {
+    public ArtifactVersionResponse createVersion(UUID projectId, UUID artifactId, CreateVersionRequest request,
+            ActorContext actor) {
         return createVersionInternal(projectId, artifactId, request, actor);
     }
 
-    private ArtifactVersionResponse createVersionInternal(UUID projectId, UUID artifactId, CreateVersionRequest request, ActorContext actor) {
+    private ArtifactVersionResponse createVersionInternal(UUID projectId, UUID artifactId, CreateVersionRequest request,
+            ActorContext actor) {
         Artifact artifact = artifactRepository.findArtifactById(artifactId, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("Artifact", artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("Artifact", artifactId));
 
         ArtifactVersion latest = artifactRepository.getLatestVersion(artifactId, projectId)
-            .orElseThrow(() -> new ApiException("Artifact has no existing versions", HttpStatus.INTERNAL_SERVER_ERROR));
+                .orElseThrow(
+                        () -> new ApiException("Artifact has no existing versions", HttpStatus.INTERNAL_SERVER_ERROR));
 
         int nextVersion = latest.version() + 1;
         byte[] contentBytes = request.content().getBytes(StandardCharsets.UTF_8);
         String hash = storageService.computeSha256(contentBytes);
         long byteSize = contentBytes.length;
 
-        StorageResult storageResult = storageService.store(projectId, artifact.title() + "_v" + nextVersion, contentBytes);
+        StorageResult storageResult = storageService.store(projectId, artifact.title() + "_v" + nextVersion,
+                contentBytes);
         String inlineContent = (byteSize <= INLINE_BYTE_LIMIT) ? request.content() : null;
 
         ArtifactVersion version = artifactRepository.appendVersion(
-            artifactId,
-            projectId,
-            nextVersion,
-            inlineContent,
-            storageResult.storageKey(),
-            hash,
-            byteSize,
-            actor.actorId(),
-            actor.actorType().name(),
-            request.changeSummary() != null ? request.changeSummary() : "Version " + nextVersion
-        );
+                artifactId,
+                projectId,
+                nextVersion,
+                inlineContent,
+                storageResult.storageKey(),
+                hash,
+                byteSize,
+                actor.actorId(),
+                actor.actorType().name(),
+                request.changeSummary() != null ? request.changeSummary() : "Version " + nextVersion);
 
         timelineService.append(
-            projectId,
-            null,
-            artifact.sourcePlatform(),
-            "ARTIFACT_VERSION_CREATED",
-            artifactId,
-            null,
-            nextVersion,
-            "SUCCESS",
-            actor.actorId(),
-            actor.actorType().name(),
-            "Created version " + nextVersion + " for artifact '" + artifact.title() + "' (hash " + hash.substring(0, 8) + "…)",
-            "{\"artifactId\":\"" + artifactId + "\",\"version\":" + nextVersion + ",\"hash\":\"" + hash + "\"}"
-        );
+                projectId,
+                null,
+                artifact.sourcePlatform(),
+                "ARTIFACT_VERSION_CREATED",
+                artifactId,
+                null,
+                nextVersion,
+                "SUCCESS",
+                actor.actorId(),
+                actor.actorType().name(),
+                "Created version " + nextVersion + " for artifact '" + artifact.title() + "' (hash "
+                        + hash.substring(0, 8) + "…)",
+                "{\"artifactId\":\"" + artifactId + "\",\"version\":" + nextVersion + ",\"hash\":\"" + hash + "\"}");
+
+        // Step 1 to 12 Ingestion Pipeline
+        try {
+            ingestionService.ingestArtifactVersion(
+                projectId,
+                artifactId,
+                nextVersion,
+                request.content(),
+                artifact.artifactType(),
+                artifact.title(),
+                artifact.sourcePlatform()
+            );
+        } catch (Exception ex) {
+            log.warn("Ingestion pipeline failed for artifact {} v{}: {}", artifactId, nextVersion, ex.getMessage());
+        }
 
         return new ArtifactVersionResponse(
-            version.id(),
-            artifactId,
-            nextVersion,
-            hash,
-            byteSize,
-            actor.actorId(),
-            actor.actorType().name(),
-            version.changeSummary(),
-            request.content(),
-            version.createdAt()
-        );
+                version.id(),
+                artifactId,
+                nextVersion,
+                hash,
+                byteSize,
+                actor.actorId(),
+                actor.actorType().name(),
+                version.changeSummary(),
+                request.content(),
+                version.createdAt());
     }
 
     @Transactional(readOnly = true)
-    public List<ArtifactResponse> listArtifacts(UUID projectId, String type, String platform, String search, UUID userId) {
+    public List<ArtifactResponse> listArtifacts(UUID projectId, String type, String platform, String search,
+            UUID userId) {
         securityChecker.verifyProjectAccess(projectId, userId, "VIEWER");
 
         List<Artifact> artifacts = artifactRepository.listArtifacts(projectId, type, platform, search);
@@ -201,19 +238,18 @@ public class ArtifactService {
         for (Artifact a : artifacts) {
             ArtifactVersion latest = artifactRepository.getLatestVersion(a.id(), projectId).orElse(null);
             result.add(new ArtifactResponse(
-                a.id(),
-                a.projectId(),
-                a.title(),
-                a.sourcePlatform(),
-                a.sourceReference(),
-                a.artifactType(),
-                a.relatedTaskId(),
-                latest != null ? latest.version() : 1,
-                latest != null ? latest.contentHash() : "",
-                latest != null ? latest.byteSize() : 0,
-                null,
-                a.createdAt()
-            ));
+                    a.id(),
+                    a.projectId(),
+                    a.title(),
+                    a.sourcePlatform(),
+                    a.sourceReference(),
+                    a.artifactType(),
+                    a.relatedTaskId(),
+                    latest != null ? latest.version() : 1,
+                    latest != null ? latest.contentHash() : "",
+                    latest != null ? latest.byteSize() : 0,
+                    null,
+                    a.createdAt()));
         }
         return result;
     }
@@ -223,27 +259,26 @@ public class ArtifactService {
         securityChecker.verifyProjectAccess(projectId, userId, "VIEWER");
 
         Artifact artifact = artifactRepository.findArtifactById(artifactId, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("Artifact", artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("Artifact", artifactId));
 
         ArtifactVersion latest = artifactRepository.getLatestVersion(artifactId, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion", artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion", artifactId));
 
         String content = resolveContentAndVerifyHash(projectId, latest);
 
         return new ArtifactResponse(
-            artifact.id(),
-            projectId,
-            artifact.title(),
-            artifact.sourcePlatform(),
-            artifact.sourceReference(),
-            artifact.artifactType(),
-            artifact.relatedTaskId(),
-            latest.version(),
-            latest.contentHash(),
-            latest.byteSize(),
-            content,
-            artifact.createdAt()
-        );
+                artifact.id(),
+                projectId,
+                artifact.title(),
+                artifact.sourcePlatform(),
+                artifact.sourceReference(),
+                artifact.artifactType(),
+                artifact.relatedTaskId(),
+                latest.version(),
+                latest.contentHash(),
+                latest.byteSize(),
+                content,
+                artifact.createdAt());
     }
 
     @Transactional(readOnly = true)
@@ -251,22 +286,22 @@ public class ArtifactService {
         securityChecker.verifyProjectAccess(projectId, userId, "VIEWER");
 
         ArtifactVersion version = artifactRepository.getVersion(artifactId, versionNum, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + versionNum + " for Artifact", artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + versionNum + " for Artifact",
+                        artifactId));
 
         String content = resolveContentAndVerifyHash(projectId, version);
 
         return new ArtifactVersionResponse(
-            version.id(),
-            artifactId,
-            version.version(),
-            version.contentHash(),
-            version.byteSize(),
-            version.createdBy(),
-            version.actorType(),
-            version.changeSummary(),
-            content,
-            version.createdAt()
-        );
+                version.id(),
+                artifactId,
+                version.version(),
+                version.contentHash(),
+                version.byteSize(),
+                version.createdBy(),
+                version.actorType(),
+                version.changeSummary(),
+                content,
+                version.createdAt());
     }
 
     @Transactional(readOnly = true)
@@ -275,17 +310,16 @@ public class ArtifactService {
 
         List<ArtifactVersion> versions = artifactRepository.listVersions(artifactId, projectId);
         return versions.stream().map(v -> new ArtifactVersionResponse(
-            v.id(),
-            v.artifactId(),
-            v.version(),
-            v.contentHash(),
-            v.byteSize(),
-            v.createdBy(),
-            v.actorType(),
-            v.changeSummary(),
-            null,
-            v.createdAt()
-        )).toList();
+                v.id(),
+                v.artifactId(),
+                v.version(),
+                v.contentHash(),
+                v.byteSize(),
+                v.createdBy(),
+                v.actorType(),
+                v.changeSummary(),
+                null,
+                v.createdAt())).toList();
     }
 
     @Transactional(readOnly = true)
@@ -293,9 +327,9 @@ public class ArtifactService {
         securityChecker.verifyProjectAccess(projectId, userId, "VIEWER");
 
         ArtifactVersion v1 = artifactRepository.getVersion(artifactId, v1Num, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + v1Num, artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + v1Num, artifactId));
         ArtifactVersion v2 = artifactRepository.getVersion(artifactId, v2Num, projectId)
-            .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + v2Num, artifactId));
+                .orElseThrow(() -> new ResourceNotFoundException("ArtifactVersion " + v2Num, artifactId));
 
         String c1 = resolveContentAndVerifyHash(projectId, v1);
         String c2 = resolveContentAndVerifyHash(projectId, v2);
@@ -357,16 +391,15 @@ public class ArtifactService {
         }
 
         return new ArtifactDiffResponse(
-            artifactId,
-            v1Num,
-            v2Num,
-            v1.contentHash(),
-            v2.contentHash(),
-            insertions,
-            deletions,
-            modifications,
-            diffLines
-        );
+                artifactId,
+                v1Num,
+                v2Num,
+                v1.contentHash(),
+                v2.contentHash(),
+                insertions,
+                deletions,
+                modifications,
+                diffLines);
     }
 
     public String resolveContentAndVerifyHash(UUID projectId, ArtifactVersion version) {
@@ -377,7 +410,9 @@ public class ArtifactService {
             byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
             String computed = storageService.computeSha256(bytes);
             if (!computed.equalsIgnoreCase(version.contentHash())) {
-                throw new ApiException("Integrity check failed: inline content hash does not match recorded SHA-256 hash", HttpStatus.INTERNAL_SERVER_ERROR);
+                throw new ApiException(
+                        "Integrity check failed: inline content hash does not match recorded SHA-256 hash",
+                        HttpStatus.INTERNAL_SERVER_ERROR);
             }
         } else if (version.storageKey() != null) {
             byte[] retrieved = storageService.retrieve(projectId, version.storageKey(), version.contentHash());
@@ -388,4 +423,3 @@ public class ArtifactService {
         return content;
     }
 }
-

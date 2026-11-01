@@ -18,6 +18,14 @@ dist/
 **/.aether_storage/
 tmp/
 *.log
+/data/
+/artifacts/
+!**/src/**
+
+# Secrets & Environment
+.env
+.env.*
+!.env.example
 
 ### STS ###
 .apt_generated
@@ -46,3 +54,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+*.exe
+agent/.aether/

@@ -21,3 +21,4 @@ public record JsonRpcResponse(
         return new JsonRpcResponse("2.0", id, null, JsonRpcError.of(code, message));
     }
 }
+

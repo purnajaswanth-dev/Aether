@@ -17,6 +17,8 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  CheckSquare,
+  Inbox,
 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
@@ -28,6 +30,8 @@ export function ProjectOverviewPage() {
   const [timeline, setTimeline] = React.useState<TimelineEvent[]>([]);
   const [artifactCount, setArtifactCount] = React.useState(0);
   const [decisionCount, setDecisionCount] = React.useState(0);
+  const [taskCount, setTaskCount] = React.useState(0);
+  const [pendingApprovalCount, setPendingApprovalCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -39,12 +43,16 @@ export function ProjectOverviewPage() {
       api.getTimeline(projectId),
       api.listArtifacts(projectId),
       api.listDecisions(projectId),
+      api.listTasks(projectId).catch(() => []),
+      api.listActionRequests(projectId, "PENDING").catch(() => []),
     ])
-      .then(([proj, tl, arts, decs]) => {
+      .then(([proj, tl, arts, decs, tsks, acts]) => {
         setProject(proj);
         setTimeline(tl);
         setArtifactCount(arts.length);
         setDecisionCount(decs.length);
+        setTaskCount(tsks.length);
+        setPendingApprovalCount(acts.length);
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
@@ -104,67 +112,95 @@ export function ProjectOverviewPage() {
       <div className="rounded-panel border border-border bg-subtle/50 p-3.5 flex items-start gap-3">
         <Sparkles className="h-4 w-4 text-accent shrink-0 mt-0.5" />
         <div className="text-xs leading-relaxed text-text-secondary">
-          <span className="font-semibold text-text-primary">Phase 1 Foundation Active:</span> PostgreSQL 16 schema with
-          pgvector, append-only triggers, Row-Level Security isolation, and SHA-256 verified artifact storage are operational.
-          AI client connectivity (Claude, ChatGPT, Antigravity) will become connectable in Phase 2 via remote Model Context Protocol (MCP).
+          <span className="font-semibold text-text-primary">Phase 5 Workflow Coordination Active:</span> Multi-agent
+          task state machine, optimistic concurrency control, verified evidence enforcement, isolated failure packages,
+          code intelligence impact analysis, and Human-in-the-Loop action execution are operational.
         </div>
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <Link
-          to={`/projects/${projectId}/artifacts`}
-          className="group rounded-panel border border-border bg-canvas p-4 shadow-lift hover:border-accent transition-colors"
+          to={`/projects/${projectId}/tasks`}
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-secondary">Stored Artifacts</span>
+            <span className="text-xs font-medium text-text-secondary">Tasks</span>
+            <CheckSquare className="h-4 w-4 text-accent" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-text-primary">{taskCount}</div>
+          <div className="mt-1 text-[11px] text-text-tertiary">
+            Linear-density tracker
+          </div>
+        </Link>
+
+        <Link
+          to={`/projects/${projectId}/inbox`}
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-text-secondary">Approval Inbox</span>
+            <Inbox className="h-4 w-4 text-warning" />
+          </div>
+          <div className="mt-2 text-2xl font-bold text-text-primary">{pendingApprovalCount}</div>
+          <div className="mt-1 text-[11px] text-text-tertiary">
+            Awaiting human review
+          </div>
+        </Link>
+
+        <Link
+          to={`/projects/${projectId}/artifacts`}
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-text-secondary">Artifacts</span>
             <FileCode2 className="h-4 w-4 text-info" />
           </div>
           <div className="mt-2 text-2xl font-bold text-text-primary">{artifactCount}</div>
           <div className="mt-1 text-[11px] text-text-tertiary flex items-center gap-1">
-            <ShieldCheck className="h-3 w-3 text-success" /> Immutable versions
+            <ShieldCheck className="h-3 w-3 text-success" /> Immutable
           </div>
         </Link>
 
         <Link
           to={`/projects/${projectId}/decisions`}
-          className="group rounded-panel border border-border bg-canvas p-4 shadow-lift hover:border-accent transition-colors"
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-secondary">Technical Decisions</span>
+            <span className="text-xs font-medium text-text-secondary">Decisions (ADRs)</span>
             <Scale className="h-4 w-4 text-warning" />
           </div>
           <div className="mt-2 text-2xl font-bold text-text-primary">{decisionCount}</div>
           <div className="mt-1 text-[11px] text-text-tertiary">
-            Human-approved lifecycle
+            Human approved
           </div>
         </Link>
 
         <Link
           to={`/projects/${projectId}/timeline`}
-          className="group rounded-panel border border-border bg-canvas p-4 shadow-lift hover:border-accent transition-colors"
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-secondary">Timeline Events</span>
+            <span className="text-xs font-medium text-text-secondary">Timeline</span>
             <History className="h-4 w-4 text-accent" />
           </div>
           <div className="mt-2 text-2xl font-bold text-text-primary">{timeline.length}</div>
           <div className="mt-1 text-[11px] text-text-tertiary">
-            Append-only audit trail
+            Append-only trail
           </div>
         </Link>
 
         <Link
           to={`/projects/${projectId}/integrations`}
-          className="group rounded-panel border border-border bg-canvas p-4 shadow-lift hover:border-accent transition-colors"
+          className="group rounded-panel border border-border bg-canvas p-3.5 shadow-lift hover:border-accent transition-colors"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-text-secondary">Connected Providers</span>
-            <Plug className="h-4 w-4 text-text-tertiary" />
+            <span className="text-xs font-medium text-text-secondary">Integrations</span>
+            <Plug className="h-4 w-4 text-success" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-text-primary">0 / 7</div>
+          <div className="mt-2 text-2xl font-bold text-text-primary">Connected</div>
           <div className="mt-1 text-[11px] text-text-tertiary">
-            Planned for Phase 2–4
+            GitHub, Render, Local
           </div>
         </Link>
       </div>

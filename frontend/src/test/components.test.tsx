@@ -69,5 +69,18 @@ describe("Design System Component Library", () => {
     expect(screen.getByText("+1")).toBeInTheDocument();
     expect(screen.getByText("-1")).toBeInTheDocument();
   });
+
+  it("renders distinct badges for DONE_UNVERIFIED and VERIFIED states", () => {
+    render(
+      <div>
+        <Badge variant="warning">Done (Unverified)</Badge>
+        <Badge variant="success">Verified</Badge>
+        <Badge variant="accent">Proposed by Agent</Badge>
+      </div>
+    );
+    expect(screen.getByText("Done (Unverified)")).toBeInTheDocument();
+    expect(screen.getByText("Verified")).toBeInTheDocument();
+    expect(screen.getByText("Proposed by Agent")).toBeInTheDocument();
+  });
 });
 

@@ -12,3 +12,4 @@ public record McpReliabilityReportResponse(
     Map<String, Long> topToolsCalled,
     Map<String, Long> platformDistribution
 ) {}
+

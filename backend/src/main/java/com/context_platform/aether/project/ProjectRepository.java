@@ -93,6 +93,17 @@ public class ProjectRepository {
         .update();
     }
 
+    public Optional<String> getMemberRole(UUID projectId, UUID userId) {
+        rlsContextHelper.setProjectContext(projectId);
+        return jdbcClient.sql("""
+            SELECT role FROM project_members WHERE project_id = ? AND user_id = ?
+        """)
+        .param(projectId)
+        .param(userId)
+        .query(String.class)
+        .optional();
+    }
+
     public void initializeCatalogueIntegrations(UUID projectId) {
         rlsContextHelper.setProjectContext(projectId);
         for (String providerId : CATALOGUE_PROVIDERS) {
