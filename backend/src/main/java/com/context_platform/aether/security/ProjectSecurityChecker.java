@@ -15,9 +15,11 @@ import java.util.UUID;
 public class ProjectSecurityChecker {
 
     private final JdbcClient jdbcClient;
+    private final RlsContextHelper rlsContextHelper;
 
-    public ProjectSecurityChecker(JdbcClient jdbcClient) {
+    public ProjectSecurityChecker(JdbcClient jdbcClient, RlsContextHelper rlsContextHelper) {
         this.jdbcClient = jdbcClient;
+        this.rlsContextHelper = rlsContextHelper;
     }
 
     public ActorContext getCurrentActor() {
@@ -33,6 +35,9 @@ public class ProjectSecurityChecker {
             throw new ProjectAccessDeniedException("Authentication required for project access");
         }
 
+        // Establish transaction-local project context so PostgreSQL RLS permits querying membership for this project
+        rlsContextHelper.setProjectContext(projectId);
+
         Optional<String> userRole = jdbcClient.sql("""
             SELECT role FROM project_members
             WHERE project_id = ? AND user_id = ?
@@ -43,10 +48,12 @@ public class ProjectSecurityChecker {
         .optional();
 
         if (userRole.isEmpty()) {
+            rlsContextHelper.setProjectContext(null);
             throw new ProjectAccessDeniedException("User is not a member of project: " + projectId);
         }
 
         if (requiredRole != null && !hasSufficientRole(userRole.get(), requiredRole)) {
+            rlsContextHelper.setProjectContext(null);
             throw new ProjectAccessDeniedException("Insufficient role. Required: " + requiredRole + ", current: " + userRole.get());
         }
     }

@@ -153,38 +153,43 @@ public class ProjectRepository {
     }
 
     public List<ProjectResponse> listByUser(UUID userId) {
-        List<Map<String, Object>> rows = jdbcClient.sql("""
-            SELECT p.id, p.public_id, p.name, p.description, p.project_type, p.tech_stack::text as tech_stack,
-                   p.directory, p.storage_preference, p.archived, p.created_at, p.updated_at, pm.role as user_role
-            FROM projects p
-            JOIN project_members pm ON p.id = pm.project_id
-            WHERE pm.user_id = ? AND p.archived = false
-            ORDER BY p.created_at DESC
-        """)
-        .param(userId)
-        .query()
-        .listOfRows();
+        rlsContextHelper.setBypassRls(true);
+        try {
+            List<Map<String, Object>> rows = jdbcClient.sql("""
+                SELECT p.id, p.public_id, p.name, p.description, p.project_type, p.tech_stack::text as tech_stack,
+                       p.directory, p.storage_preference, p.archived, p.created_at, p.updated_at, pm.role as user_role
+                FROM projects p
+                JOIN project_members pm ON p.id = pm.project_id
+                WHERE pm.user_id = ? AND p.archived = false
+                ORDER BY p.created_at DESC
+            """)
+            .param(userId)
+            .query()
+            .listOfRows();
 
-        List<ProjectResponse> result = new ArrayList<>();
-        for (Map<String, Object> r : rows) {
-            String tsJson = (String) r.get("tech_stack");
-            List<String> techStack = deserializeJsonList(tsJson);
-            result.add(new ProjectResponse(
-                (UUID) r.get("id"),
-                (String) r.get("public_id"),
-                (String) r.get("name"),
-                (String) r.get("description"),
-                (String) r.get("project_type"),
-                techStack,
-                (String) r.get("directory"),
-                (String) r.get("storage_preference"),
-                (Boolean) r.get("archived"),
-                (String) r.get("user_role"),
-                (Instant) r.get("created_at"),
-                (Instant) r.get("updated_at")
-            ));
+            List<ProjectResponse> result = new ArrayList<>();
+            for (Map<String, Object> r : rows) {
+                String tsJson = (String) r.get("tech_stack");
+                List<String> techStack = deserializeJsonList(tsJson);
+                result.add(new ProjectResponse(
+                    (UUID) r.get("id"),
+                    (String) r.get("public_id"),
+                    (String) r.get("name"),
+                    (String) r.get("description"),
+                    (String) r.get("project_type"),
+                    techStack,
+                    (String) r.get("directory"),
+                    (String) r.get("storage_preference"),
+                    (Boolean) r.get("archived"),
+                    (String) r.get("user_role"),
+                    (Instant) r.get("created_at"),
+                    (Instant) r.get("updated_at")
+                ));
+            }
+            return result;
+        } finally {
+            rlsContextHelper.setBypassRls(false);
         }
-        return result;
     }
 
     public void updateProject(UUID projectId, String name, String description, String projectType, List<String> techStack, String directory, String storagePreference) {
