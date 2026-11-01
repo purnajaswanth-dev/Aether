@@ -239,3 +239,4 @@ Enter the 6-character alphanumeric pairing code generated in the Aether Project 
 
 ### Preserving Uploaded Artifacts
 - The persistent disk mounted at `/app/data/artifacts` ensures all raw uploaded documents, logs, and artifacts survive backend restarts and redeployments.
+

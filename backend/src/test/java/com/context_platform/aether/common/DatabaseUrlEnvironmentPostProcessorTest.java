@@ -16,6 +16,59 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     private final DatabaseUrlEnvironmentPostProcessor processor = new DatabaseUrlEnvironmentPostProcessor();
 
     @Test
+    @DisplayName("Normalizes DB_URL, DB_USERNAME, DB_PASSWORD environment variables for Neon")
+    void testNormalizeNeonDbEnvironmentVariables() {
+        ConfigurableEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+                "DB_URL", "jdbc:postgresql://ep-silent-moon-123456.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "aether_neon_user",
+                "DB_PASSWORD", "neon_secure_password_987"
+        )));
+
+        processor.postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("jdbc:postgresql://ep-silent-moon-123456.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                env.getProperty("spring.datasource.url"));
+        assertEquals("aether_neon_user", env.getProperty("spring.datasource.username"));
+        assertEquals("neon_secure_password_987", env.getProperty("spring.datasource.password"));
+    }
+
+    @Test
+    @DisplayName("Automatically appends sslmode=require if connecting to a Neon host without TLS parameter")
+    void testEnforceTlsForNeonEndpoints() {
+        ConfigurableEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+                "DB_URL", "postgresql://neon_admin:pass123@ep-cool-pooler.us-east-2.aws.neon.tech/neondb"
+        )));
+
+        processor.postProcessEnvironment(env, new SpringApplication());
+
+        assertEquals("jdbc:postgresql://ep-cool-pooler.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                env.getProperty("spring.datasource.url"));
+        assertEquals("neon_admin", env.getProperty("spring.datasource.username"));
+        assertEquals("pass123", env.getProperty("spring.datasource.password"));
+    }
+
+    @Test
+    @DisplayName("Supports Neon pooled connection endpoint with separate DB_USERNAME and DB_PASSWORD")
+    void testNeonPooledConnectionWithExplicitCredentials() {
+        ConfigurableEnvironment env = new StandardEnvironment();
+        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+                "DB_URL", "jdbc:postgresql://ep-fragrant-pond-a5b6c7-pooler.us-east-2.aws.neon.tech:5432/neondb",
+                "DB_USERNAME", "pooler_user",
+                "DB_PASSWORD", "pooler_secret"
+        )));
+
+        processor.postProcessEnvironment(env, new SpringApplication());
+
+        // sslmode=require should be injected
+        assertEquals("jdbc:postgresql://ep-fragrant-pond-a5b6c7-pooler.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                env.getProperty("spring.datasource.url"));
+        assertEquals("pooler_user", env.getProperty("spring.datasource.username"));
+        assertEquals("pooler_secret", env.getProperty("spring.datasource.password"));
+    }
+
+    @Test
     @DisplayName("Normalizes Render/Heroku postgresql:// URL with user and password")
     void testNormalizeRenderPostgresqlUrl() {
         ConfigurableEnvironment env = new StandardEnvironment();
@@ -48,7 +101,7 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     }
 
     @Test
-    @DisplayName("Does not modify existing standard jdbc:postgresql:// URL")
+    @DisplayName("Does not modify existing standard jdbc:postgresql:// URL for local Docker")
     void testPassThroughStandardJdbcUrl() {
         ConfigurableEnvironment env = new StandardEnvironment();
         env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
@@ -57,7 +110,7 @@ class DatabaseUrlEnvironmentPostProcessorTest {
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
-        // Should not have added cloudDatabaseUrlPostProcessor property source
-        assertFalse(env.getPropertySources().contains("cloudDatabaseUrlPostProcessor"));
+        // Should not have modified localhost URL
+        assertEquals("jdbc:postgresql://localhost:5432/aether", env.getProperty("spring.datasource.url"));
     }
 }

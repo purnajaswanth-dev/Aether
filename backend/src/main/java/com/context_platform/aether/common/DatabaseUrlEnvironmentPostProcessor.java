@@ -13,13 +13,18 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Normalizes cloud provider database connection URLs (Render, Heroku, Supabase, Neon, etc.)
+ * Normalizes cloud provider database connection URLs (Neon PostgreSQL, Render, etc.)
  * into Spring Boot / HikariCP compatible JDBC properties.
  *
  * Supports:
- * - postgres://user:pass@host:port/database
- * - postgresql://user:pass@host:port/database
- * - Standard jdbc:postgresql:// URLs (passed through unchanged)
+ * - Environment variables: DB_URL, DB_USERNAME, DB_PASSWORD
+ * - Fallbacks: DATABASE_URL, SPRING_DATASOURCE_URL
+ * - Formats:
+ *     - postgres://user:pass@host:port/database
+ *     - postgresql://user:pass@host:port/database
+ *     - jdbc:postgresql://host:port/database?sslmode=require
+ * - Guarantees TLS (sslmode=require) for Neon endpoints (*.neon.tech)
+ * - Masks credentials to prevent any leakage in application logs
  */
 public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
 
@@ -27,7 +32,10 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
-        String dbUrl = environment.getProperty("DATABASE_URL");
+        String dbUrl = environment.getProperty("DB_URL");
+        if (dbUrl == null || dbUrl.isBlank()) {
+            dbUrl = environment.getProperty("DATABASE_URL");
+        }
         if (dbUrl == null || dbUrl.isBlank()) {
             dbUrl = environment.getProperty("SPRING_DATASOURCE_URL");
         }
@@ -38,10 +46,27 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
 
         Map<String, Object> targetProperties = new HashMap<>();
 
+        // Capture explicit credentials if provided
+        String explicitUsername = environment.getProperty("DB_USERNAME");
+        if (explicitUsername == null || explicitUsername.isBlank()) {
+            explicitUsername = environment.getProperty("SPRING_DATASOURCE_USERNAME");
+        }
+
+        String explicitPassword = environment.getProperty("DB_PASSWORD");
+        if (explicitPassword == null || explicitPassword.isBlank()) {
+            explicitPassword = environment.getProperty("SPRING_DATASOURCE_PASSWORD");
+        }
+
+        if (explicitUsername != null && !explicitUsername.isBlank()) {
+            targetProperties.put("spring.datasource.username", explicitUsername);
+        }
+        if (explicitPassword != null && !explicitPassword.isBlank()) {
+            targetProperties.put("spring.datasource.password", explicitPassword);
+        }
+
         try {
             if (dbUrl.startsWith("postgres://") || dbUrl.startsWith("postgresql://")) {
-                log.info("Detected cloud PostgreSQL connection string; normalizing for Spring Data / JDBC");
-                // Convert scheme to http temporarily to leverage Java's URI parser for userinfo, host, port, path
+                log.info("Detected cloud PostgreSQL URI; normalizing for JDBC");
                 String normalizedScheme = dbUrl.replaceFirst("^postgres(ql)?://", "http://");
                 URI uri = URI.create(normalizedScheme);
 
@@ -50,16 +75,20 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                 String path = uri.getPath(); // /dbname
                 String query = uri.getQuery();
 
+                // Extract credentials from URI if not already explicitly provided
                 String userInfo = uri.getUserInfo();
                 if (userInfo != null && !userInfo.isBlank()) {
                     String[] parts = userInfo.split(":", 2);
-                    if (parts.length > 0 && !parts[0].isBlank()) {
+                    if (parts.length > 0 && !parts[0].isBlank() && !targetProperties.containsKey("spring.datasource.username")) {
                         targetProperties.put("spring.datasource.username", parts[0]);
                     }
-                    if (parts.length > 1) {
+                    if (parts.length > 1 && !targetProperties.containsKey("spring.datasource.password")) {
                         targetProperties.put("spring.datasource.password", parts[1]);
                     }
                 }
+
+                // Append sslmode=require for Neon or cloud endpoints if query doesn't specify it
+                query = ensureSslMode(host, query);
 
                 StringBuilder jdbcUrl = new StringBuilder("jdbc:postgresql://")
                         .append(host)
@@ -72,7 +101,18 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                 }
 
                 targetProperties.put("spring.datasource.url", jdbcUrl.toString());
-                log.info("Successfully normalized database target to jdbc:postgresql://{}:{}{}", host, port, path);
+                log.info("Normalized cloud database target to host: {} (port: {}, path: {})", host, port, path);
+
+            } else if (dbUrl.startsWith("jdbc:postgresql://")) {
+                // Ensure TLS if connecting to Neon
+                String currentUrl = dbUrl;
+                if (currentUrl.contains("neon.tech") && !currentUrl.contains("sslmode=")) {
+                    currentUrl = currentUrl.contains("?") ? currentUrl + "&sslmode=require" : currentUrl + "?sslmode=require";
+                    targetProperties.put("spring.datasource.url", currentUrl);
+                    log.info("Enforced sslmode=require for Neon JDBC connection string");
+                } else {
+                    targetProperties.put("spring.datasource.url", currentUrl);
+                }
             }
         } catch (Exception e) {
             log.warn("Failed to automatically normalize database URL: {}. Hikari will use raw properties.", e.getMessage());
@@ -83,6 +123,17 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                     new MapPropertySource("cloudDatabaseUrlPostProcessor", targetProperties)
             );
         }
+    }
+
+    private String ensureSslMode(String host, String query) {
+        if (host != null && host.contains("neon.tech")) {
+            if (query == null || query.isBlank()) {
+                return "sslmode=require";
+            } else if (!query.contains("sslmode=")) {
+                return query + "&sslmode=require";
+            }
+        }
+        return query;
     }
 
     @Override

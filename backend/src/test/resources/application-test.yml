@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aether}
-    username: ${SPRING_DATASOURCE_USERNAME:aether}
-    password: ${SPRING_DATASOURCE_PASSWORD:aether_dev_password}
+    url: ${DB_URL:${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/aether}}
+    username: ${DB_USERNAME:${SPRING_DATASOURCE_USERNAME:aether}}
+    password: ${DB_PASSWORD:${SPRING_DATASOURCE_PASSWORD:aether_dev_password}}
     driver-class-name: org.postgresql.Driver
   flyway:
     enabled: true
