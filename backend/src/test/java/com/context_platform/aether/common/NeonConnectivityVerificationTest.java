@@ -3,6 +3,8 @@ package com.context_platform.aether.common;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -159,13 +161,18 @@ public class NeonConnectivityVerificationTest {
                 }
             }
 
-            // Fallback check: if sslmode=require in URL and connection succeeded
-            if (!tlsActive) {
-                tlsActive = true;
-                tlsVersion = "TLS (enforced by sslmode=require)";
-            }
-
             System.out.println("TLS_ENCRYPTION: " + (tlsActive ? "PASS" : "FAIL") + " (protocol=" + tlsVersion + ", cipher=" + tlsCipher + ")");
+            assertThat(tlsActive)
+                    .withFailMessage("TLS verification failed: pg_stat_ssl did not report ssl=true for active backend PID")
+                    .isTrue();
+            assertThat(tlsVersion)
+                    .withFailMessage("TLS version reported by pg_stat_ssl must not be blank")
+                    .isNotBlank()
+                    .isNotEqualTo("N/A");
+            assertThat(tlsCipher)
+                    .withFailMessage("TLS cipher reported by pg_stat_ssl must not be blank")
+                    .isNotBlank()
+                    .isNotEqualTo("N/A");
 
             // 3. Runtime Role Attributes
             boolean isSuperuser = false;

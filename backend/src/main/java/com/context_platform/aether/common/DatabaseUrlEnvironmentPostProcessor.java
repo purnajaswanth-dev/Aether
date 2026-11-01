@@ -9,16 +9,18 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 import java.net.URI;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * Normalizes cloud provider database connection URLs (Neon PostgreSQL, Render, etc.)
- * into Spring Boot / HikariCP compatible JDBC properties.
+ * into Spring Boot / HikariCP and Flyway compatible JDBC properties.
  *
  * Enforces production security:
- * - Requires explicit DB_URL, DB_USERNAME, DB_PASSWORD when 'prod' profile is active
+ * - Requires explicit DB_URL, DB_USERNAME, DB_PASSWORD, MIGRATION_DB_USERNAME, MIGRATION_DB_PASSWORD,
+ *   AETHER_JWT_SECRET, and AETHER_MASTER_KEY when 'prod' profile is active
+ * - Strictly enforces separation of migration role (neondb_owner) from runtime role (aether_app)
+ * - Completely prohibits identical runtime and migration usernames in production
  * - Completely prohibits development fallback credentials in production
  * - Preserves Docker defaults exclusively for local development
  * - Guarantees TLS (sslmode=require) for Neon endpoints (*.neon.tech)
@@ -40,7 +42,7 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
             dbUrl = environment.getProperty("SPRING_DATASOURCE_URL");
         }
 
-        // Capture explicit credentials if provided
+        // Capture explicit runtime credentials
         String explicitUsername = environment.getProperty("DB_USERNAME");
         if (explicitUsername == null || explicitUsername.isBlank()) {
             explicitUsername = environment.getProperty("SPRING_DATASOURCE_USERNAME");
@@ -50,6 +52,20 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         if (explicitPassword == null || explicitPassword.isBlank()) {
             explicitPassword = environment.getProperty("SPRING_DATASOURCE_PASSWORD");
         }
+
+        // Capture explicit migration credentials
+        String migrationUsername = environment.getProperty("MIGRATION_DB_USERNAME");
+        if (migrationUsername == null || migrationUsername.isBlank()) {
+            migrationUsername = environment.getProperty("SPRING_FLYWAY_USER");
+        }
+
+        String migrationPassword = environment.getProperty("MIGRATION_DB_PASSWORD");
+        if (migrationPassword == null || migrationPassword.isBlank()) {
+            migrationPassword = environment.getProperty("SPRING_FLYWAY_PASSWORD");
+        }
+
+        String jwtSecret = environment.getProperty("AETHER_JWT_SECRET");
+        String masterKey = environment.getProperty("AETHER_MASTER_KEY");
 
         // Strict Production Credential Enforcement
         if (isProd) {
@@ -62,9 +78,25 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
             if (explicitPassword == null || explicitPassword.isBlank() || explicitPassword.startsWith("${")) {
                 throw new IllegalStateException("Production profile 'prod' requires 'DB_PASSWORD' to be configured. Development fallbacks are strictly prohibited in production.");
             }
-            String jwtSecret = environment.getProperty("AETHER_JWT_SECRET");
+            if (migrationUsername == null || migrationUsername.isBlank() || migrationUsername.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'MIGRATION_DB_USERNAME' to be configured for Flyway migrations. Separation from runtime credentials is mandatory.");
+            }
+            if (migrationPassword == null || migrationPassword.isBlank() || migrationPassword.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'MIGRATION_DB_PASSWORD' to be configured for Flyway migrations. Separation from runtime credentials is mandatory.");
+            }
             if (jwtSecret == null || jwtSecret.isBlank() || jwtSecret.startsWith("${")) {
                 throw new IllegalStateException("Production profile 'prod' requires 'AETHER_JWT_SECRET' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+            if (masterKey == null || masterKey.isBlank() || masterKey.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'AETHER_MASTER_KEY' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+
+            // Role collision rejection: Runtime DB_USERNAME must not equal MIGRATION_DB_USERNAME
+            if (explicitUsername.equalsIgnoreCase(migrationUsername)) {
+                throw new IllegalStateException(
+                        "Production security violation: Runtime 'DB_USERNAME' and migration 'MIGRATION_DB_USERNAME' cannot be the same role ('" + explicitUsername + "'). " +
+                        "The runtime role must be an unprivileged role with NOBYPASSRLS (e.g. 'aether_app') to enforce Row-Level Security."
+                );
             }
         }
 
@@ -79,6 +111,15 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         }
         if (explicitPassword != null && !explicitPassword.isBlank()) {
             targetProperties.put("spring.datasource.password", explicitPassword);
+        }
+        if (migrationUsername != null && !migrationUsername.isBlank()) {
+            targetProperties.put("spring.flyway.user", migrationUsername);
+        }
+        if (migrationPassword != null && !migrationPassword.isBlank()) {
+            targetProperties.put("spring.flyway.password", migrationPassword);
+        }
+        if (masterKey != null && !masterKey.isBlank()) {
+            targetProperties.put("aether.security.master-key", masterKey);
         }
 
         try {
@@ -117,7 +158,9 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                     jdbcUrl.append("?").append(query);
                 }
 
-                targetProperties.put("spring.datasource.url", jdbcUrl.toString());
+                String finalUrl = jdbcUrl.toString();
+                targetProperties.put("spring.datasource.url", finalUrl);
+                targetProperties.put("spring.flyway.url", finalUrl);
                 log.info("Normalized cloud database target to host: {} (port: {}, path: {})", host, port, path);
 
             } else if (dbUrl.startsWith("jdbc:postgresql://")) {
@@ -126,9 +169,11 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                 if (currentUrl.contains("neon.tech") && !currentUrl.contains("sslmode=")) {
                     currentUrl = currentUrl.contains("?") ? currentUrl + "&sslmode=require" : currentUrl + "?sslmode=require";
                     targetProperties.put("spring.datasource.url", currentUrl);
+                    targetProperties.put("spring.flyway.url", currentUrl);
                     log.info("Enforced sslmode=require for Neon JDBC connection string");
                 } else {
                     targetProperties.put("spring.datasource.url", currentUrl);
+                    targetProperties.put("spring.flyway.url", currentUrl);
                 }
             }
         } catch (Exception e) {

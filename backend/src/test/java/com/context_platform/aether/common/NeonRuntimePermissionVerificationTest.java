@@ -6,6 +6,8 @@ import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,31 @@ public class NeonRuntimePermissionVerificationTest {
 
         // Explicit hardening attributes on aether_app
         assertThat(v11).contains("ALTER ROLE aether_app NOBYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;");
+    }
+
+    @Test
+    @DisplayName("scripts/provision-neon-roles.sql enforces least-privilege, revokes flyway_schema_history, and grants only required functions")
+    void testProvisionNeonRolesScript() throws IOException {
+        Path scriptPath = Path.of("..", "scripts", "provision-neon-roles.sql");
+        if (!Files.exists(scriptPath)) {
+            scriptPath = Path.of("scripts", "provision-neon-roles.sql");
+        }
+        assertThat(Files.exists(scriptPath)).isTrue();
+        String sql = Files.readString(scriptPath, StandardCharsets.UTF_8);
+
+        assertThat(sql).contains("CREATE ROLE aether_app WITH");
+        assertThat(sql).contains("NOBYPASSRLS");
+        assertThat(sql).contains("NOSUPERUSER");
+        assertThat(sql).contains("NOCREATEDB");
+        assertThat(sql).contains("NOCREATEROLE");
+        assertThat(sql).contains("REPLACE_WITH_AETHER_APP_GENERATED_PASSWORD");
+        assertThat(sql).contains("REVOKE ALL PRIVILEGES ON TABLE flyway_schema_history FROM aether_app;");
+        assertThat(sql).contains("GRANT EXECUTE ON FUNCTION current_project_matches(UUID) TO aether_app;");
+        assertThat(sql).contains("GRANT EXECUTE ON FUNCTION reject_update_delete() TO aether_app;");
+        assertThat(sql).contains("ALTER DEFAULT PRIVILEGES FOR ROLE CURRENT_USER IN SCHEMA public");
+        assertThat(sql).doesNotContain("GRANT TRUNCATE");
+        assertThat(sql).doesNotContain("GRANT ALL");
+        assertThat(sql.replace("NOBYPASSRLS", "")).doesNotMatch("(?i).*\\bBYPASSRLS\\b.*");
     }
 
     @Test

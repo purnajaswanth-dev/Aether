@@ -62,7 +62,7 @@ public class RowLevelSecurityIsolationTest extends BaseTest {
             artifactService.getLatest(projectA.id(), artifactA.id(), userB.user().id());
         }).isInstanceOf(ProjectAccessDeniedException.class);
 
-        // 5. Test direct PostgreSQL Row-Level Security (RLS) enforcement
+        // 5. Test direct PostgreSQL Row-Level Security (RLS) enforcement under aether_app
         // Switch session to non-superuser application role with NOBYPASSRLS
         jdbcClient.sql("SET ROLE aether_app").update();
         try {
@@ -87,6 +87,29 @@ public class RowLevelSecurityIsolationTest extends BaseTest {
                 .param(projectA.id())
                 .update();
             }).isInstanceOf(Exception.class);
+
+            // Attempting to UPDATE a record of Project A while in Project B context affects 0 rows
+            int updated = jdbcClient.sql("UPDATE artifacts SET title = 'Compromised' WHERE id = ? AND project_id = ?")
+                .param(artifactA.id())
+                .param(projectA.id())
+                .update();
+            assertThat(updated).isEqualTo(0);
+
+            // Attempting to DELETE a record of Project A while in Project B context affects 0 rows
+            int deleted = jdbcClient.sql("DELETE FROM artifacts WHERE id = ? AND project_id = ?")
+                .param(artifactA.id())
+                .param(projectA.id())
+                .update();
+            assertThat(deleted).isEqualTo(0);
+
+            // Verification: Switch context to Project A -> Project A can access its own records
+            rlsContextHelper.setProjectContext(projectA.id());
+            List<UUID> projectAArtifacts = jdbcClient.sql("SELECT id FROM artifacts WHERE project_id = ?")
+                .param(projectA.id())
+                .query(UUID.class)
+                .list();
+            assertThat(projectAArtifacts).contains(artifactA.id());
+
         } finally {
             jdbcClient.sql("RESET ROLE").update();
             rlsContextHelper.setBypassRls(true);

@@ -18,6 +18,9 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+    url: ${spring.datasource.url}
+    user: ${MIGRATION_DB_USERNAME:${spring.datasource.username}}
+    password: ${MIGRATION_DB_PASSWORD:${spring.datasource.password}}
   servlet:
     multipart:
       max-file-size: 50MB

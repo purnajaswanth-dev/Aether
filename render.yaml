@@ -29,9 +29,13 @@ services:
       - key: DB_URL
         sync: false # Supply your Neon JDBC connection string in Render Dashboard (e.g. jdbc:postgresql://ep-xyz.neon.tech/neondb?sslmode=require)
       - key: DB_USERNAME
-        sync: false # Supply your Neon database username in Render Dashboard
+        sync: false # Supply aether_app unprivileged runtime username in Render Dashboard
       - key: DB_PASSWORD
-        sync: false # Supply your Neon database password in Render Dashboard
+        sync: false # Supply aether_app runtime password in Render Dashboard
+      - key: MIGRATION_DB_USERNAME
+        sync: false # Supply neondb_owner migration admin username in Render Dashboard
+      - key: MIGRATION_DB_PASSWORD
+        sync: false # Supply neondb_owner migration admin password in Render Dashboard
       - key: AETHER_STORAGE_LOCAL_PATH
         value: /app/data/artifacts
       - key: AETHER_JWT_SECRET

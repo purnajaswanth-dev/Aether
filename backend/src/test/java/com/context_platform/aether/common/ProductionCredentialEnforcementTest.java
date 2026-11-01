@@ -28,7 +28,10 @@ class ProductionCredentialEnforcementTest {
                 @Value("${spring.datasource.url}") String url,
                 @Value("${spring.datasource.username}") String username,
                 @Value("${spring.datasource.password}") String password,
-                @Value("${aether.security.jwt.secret}") String jwtSecret
+                @Value("${spring.flyway.user}") String flywayUser,
+                @Value("${spring.flyway.password}") String flywayPassword,
+                @Value("${aether.security.jwt.secret}") String jwtSecret,
+                @Value("${aether.security.master-key}") String masterKey
         ) {}
     }
 
@@ -45,6 +48,19 @@ class ProductionCredentialEnforcementTest {
         ) {}
     }
 
+    private Map<String, Object> validProdProperties() {
+        return Map.of(
+                "spring.profiles.active", "prod",
+                "DB_URL", "jdbc:postgresql://ep-prod-instance.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_runtime_pass_123",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_migration_pass_456",
+                "AETHER_JWT_SECRET", "super_secret_jwt_key_256_bits_minimum_length_required_for_prod",
+                "AETHER_MASTER_KEY", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
     @Test
     @DisplayName("Production profile fails startup immediately when DB_URL is missing")
     void testProdFailsWhenDbUrlMissing() {
@@ -52,9 +68,12 @@ class ProductionCredentialEnforcementTest {
         app.setWebApplicationType(WebApplicationType.NONE);
         app.setDefaultProperties(Map.of(
                 "spring.profiles.active", "prod",
-                "DB_USERNAME", "prod_user",
-                "DB_PASSWORD", "prod_password",
-                "AETHER_JWT_SECRET", "super_secret_jwt_key_256_bits_minimum_length_required_for_prod"
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
         ));
 
         assertThatThrownBy(app::run)
@@ -70,8 +89,11 @@ class ProductionCredentialEnforcementTest {
         app.setDefaultProperties(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
-                "DB_PASSWORD", "prod_password",
-                "AETHER_JWT_SECRET", "super_secret_jwt_key_256_bits_minimum_length_required_for_prod"
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
         ));
 
         assertThatThrownBy(app::run)
@@ -87,13 +109,56 @@ class ProductionCredentialEnforcementTest {
         app.setDefaultProperties(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
-                "DB_USERNAME", "prod_user",
-                "AETHER_JWT_SECRET", "super_secret_jwt_key_256_bits_minimum_length_required_for_prod"
+                "DB_USERNAME", "aether_app",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
         ));
 
         assertThatThrownBy(app::run)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Production profile 'prod' requires 'DB_PASSWORD' to be configured");
+    }
+
+    @Test
+    @DisplayName("Production profile fails startup immediately when MIGRATION_DB_USERNAME is missing")
+    void testProdFailsWhenMigrationDbUsernameMissing() {
+        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setDefaultProperties(Map.of(
+                "spring.profiles.active", "prod",
+                "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
+        ));
+
+        assertThatThrownBy(app::run)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Production profile 'prod' requires 'MIGRATION_DB_USERNAME' to be configured");
+    }
+
+    @Test
+    @DisplayName("Production profile fails startup immediately when MIGRATION_DB_PASSWORD is missing")
+    void testProdFailsWhenMigrationDbPasswordMissing() {
+        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setDefaultProperties(Map.of(
+                "spring.profiles.active", "prod",
+                "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
+        ));
+
+        assertThatThrownBy(app::run)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Production profile 'prod' requires 'MIGRATION_DB_PASSWORD' to be configured");
     }
 
     @Test
@@ -104,8 +169,11 @@ class ProductionCredentialEnforcementTest {
         app.setDefaultProperties(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
-                "DB_USERNAME", "prod_user",
-                "DB_PASSWORD", "prod_pass"
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_MASTER_KEY", "master_key_value"
         ));
 
         assertThatThrownBy(app::run)
@@ -114,24 +182,63 @@ class ProductionCredentialEnforcementTest {
     }
 
     @Test
-    @DisplayName("Production profile resolves configured Neon properties when all credentials are provided")
-    void testProdSucceedsWithAllCredentialsProvided() {
+    @DisplayName("Production profile fails startup immediately when AETHER_MASTER_KEY is missing")
+    void testProdFailsWhenMasterKeyMissing() {
         SpringApplication app = new SpringApplication(MinimalTestConfig.class);
         app.setWebApplicationType(WebApplicationType.NONE);
         app.setDefaultProperties(Map.of(
                 "spring.profiles.active", "prod",
-                "DB_URL", "jdbc:postgresql://ep-prod-instance.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
-                "DB_USERNAME", "prod_neon_admin",
-                "DB_PASSWORD", "strong_production_neon_password_987",
-                "AETHER_JWT_SECRET", "super_secret_jwt_key_256_bits_minimum_length_required_for_prod"
+                "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "aether_app",
+                "DB_PASSWORD", "aether_app_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "neondb_owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value"
         ));
+
+        assertThatThrownBy(app::run)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Production profile 'prod' requires 'AETHER_MASTER_KEY' to be configured");
+    }
+
+    @Test
+    @DisplayName("Production profile rejects role collision when DB_USERNAME equals MIGRATION_DB_USERNAME")
+    void testProdRejectsRoleCollision() {
+        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setDefaultProperties(Map.of(
+                "spring.profiles.active", "prod",
+                "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
+                "DB_USERNAME", "neondb_owner",
+                "DB_PASSWORD", "owner_pass",
+                "MIGRATION_DB_USERNAME", "neondb_owner",
+                "MIGRATION_DB_PASSWORD", "owner_pass",
+                "AETHER_JWT_SECRET", "jwt_secret_value",
+                "AETHER_MASTER_KEY", "master_key_value"
+        ));
+
+        assertThatThrownBy(app::run)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Production security violation: Runtime 'DB_USERNAME' and migration 'MIGRATION_DB_USERNAME' cannot be the same role");
+    }
+
+    @Test
+    @DisplayName("Production profile resolves separated runtime and migration identities")
+    void testProdSucceedsWithSeparatedIdentities() {
+        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setDefaultProperties(validProdProperties());
 
         try (ConfigurableApplicationContext ctx = app.run()) {
             ConfigurableEnvironment env = ctx.getEnvironment();
             assertThat(env.getProperty("spring.datasource.url")).isEqualTo("jdbc:postgresql://ep-prod-instance.us-east-2.aws.neon.tech:5432/neondb?sslmode=require");
-            assertThat(env.getProperty("spring.datasource.username")).isEqualTo("prod_neon_admin");
-            assertThat(env.getProperty("spring.datasource.password")).isEqualTo("strong_production_neon_password_987");
+            assertThat(env.getProperty("spring.datasource.username")).isEqualTo("aether_app");
+            assertThat(env.getProperty("spring.datasource.password")).isEqualTo("aether_app_runtime_pass_123");
             assertThat(env.getProperty("spring.datasource.hikari.pool-name")).isEqualTo("AetherProdHikariPool");
+            assertThat(env.getProperty("spring.flyway.user")).isEqualTo("neondb_owner");
+            assertThat(env.getProperty("spring.flyway.password")).isEqualTo("neondb_owner_migration_pass_456");
+            assertThat(env.getProperty("spring.flyway.url")).isEqualTo("jdbc:postgresql://ep-prod-instance.us-east-2.aws.neon.tech:5432/neondb?sslmode=require");
+            assertThat(env.getProperty("aether.security.master-key")).isEqualTo("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
         }
     }
 
