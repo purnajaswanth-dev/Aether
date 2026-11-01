@@ -77,3 +77,4 @@ If any issue arises during or after the Neon migration:
 1. **Instant Backend Reversion**: Update Render's `DB_URL`, `DB_USERNAME`, and `DB_PASSWORD` to point back to the fallback database or local replica.
 2. **Local Environment Safety**: Because the Docker PostgreSQL database was never modified or deleted, local operations remain 100% operational at all times.
 3. **Artifact Integrity**: File artifact binaries stored on Render's persistent disk are decoupled from database records and remain intact.
+

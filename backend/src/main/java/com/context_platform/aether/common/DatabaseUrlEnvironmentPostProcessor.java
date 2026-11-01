@@ -9,6 +9,7 @@ import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MapPropertySource;
 
 import java.net.URI;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,13 +17,10 @@ import java.util.Map;
  * Normalizes cloud provider database connection URLs (Neon PostgreSQL, Render, etc.)
  * into Spring Boot / HikariCP compatible JDBC properties.
  *
- * Supports:
- * - Environment variables: DB_URL, DB_USERNAME, DB_PASSWORD
- * - Fallbacks: DATABASE_URL, SPRING_DATASOURCE_URL
- * - Formats:
- *     - postgres://user:pass@host:port/database
- *     - postgresql://user:pass@host:port/database
- *     - jdbc:postgresql://host:port/database?sslmode=require
+ * Enforces production security:
+ * - Requires explicit DB_URL, DB_USERNAME, DB_PASSWORD when 'prod' profile is active
+ * - Completely prohibits development fallback credentials in production
+ * - Preserves Docker defaults exclusively for local development
  * - Guarantees TLS (sslmode=require) for Neon endpoints (*.neon.tech)
  * - Masks credentials to prevent any leakage in application logs
  */
@@ -32,6 +30,8 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        boolean isProd = isProdProfileActive(environment);
+
         String dbUrl = environment.getProperty("DB_URL");
         if (dbUrl == null || dbUrl.isBlank()) {
             dbUrl = environment.getProperty("DATABASE_URL");
@@ -39,12 +39,6 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         if (dbUrl == null || dbUrl.isBlank()) {
             dbUrl = environment.getProperty("SPRING_DATASOURCE_URL");
         }
-
-        if (dbUrl == null || dbUrl.isBlank()) {
-            return;
-        }
-
-        Map<String, Object> targetProperties = new HashMap<>();
 
         // Capture explicit credentials if provided
         String explicitUsername = environment.getProperty("DB_USERNAME");
@@ -56,6 +50,29 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
         if (explicitPassword == null || explicitPassword.isBlank()) {
             explicitPassword = environment.getProperty("SPRING_DATASOURCE_PASSWORD");
         }
+
+        // Strict Production Credential Enforcement
+        if (isProd) {
+            if (dbUrl == null || dbUrl.isBlank() || dbUrl.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'DB_URL' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+            if (explicitUsername == null || explicitUsername.isBlank() || explicitUsername.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'DB_USERNAME' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+            if (explicitPassword == null || explicitPassword.isBlank() || explicitPassword.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'DB_PASSWORD' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+            String jwtSecret = environment.getProperty("AETHER_JWT_SECRET");
+            if (jwtSecret == null || jwtSecret.isBlank() || jwtSecret.startsWith("${")) {
+                throw new IllegalStateException("Production profile 'prod' requires 'AETHER_JWT_SECRET' to be configured. Development fallbacks are strictly prohibited in production.");
+            }
+        }
+
+        if (dbUrl == null || dbUrl.isBlank()) {
+            return;
+        }
+
+        Map<String, Object> targetProperties = new HashMap<>();
 
         if (explicitUsername != null && !explicitUsername.isBlank()) {
             targetProperties.put("spring.datasource.username", explicitUsername);
@@ -123,6 +140,23 @@ public class DatabaseUrlEnvironmentPostProcessor implements EnvironmentPostProce
                     new MapPropertySource("cloudDatabaseUrlPostProcessor", targetProperties)
             );
         }
+    }
+
+    private boolean isProdProfileActive(ConfigurableEnvironment environment) {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        String activeProfiles = environment.getProperty("spring.profiles.active");
+        if (activeProfiles != null) {
+            for (String p : activeProfiles.split(",")) {
+                if ("prod".equalsIgnoreCase(p.trim())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String ensureSslMode(String host, String query) {

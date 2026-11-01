@@ -77,3 +77,4 @@ Neon computes scale dynamically and can suspend idle compute nodes. The followin
    Releases unused connections back to the database, preventing connection pool exhaustion on serverless tiers.
 4. **`connection-test-query: SELECT 1`**:
    Actively verifies connection liveness before delivering connections from the pool.
+

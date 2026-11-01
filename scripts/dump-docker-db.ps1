@@ -30,7 +30,7 @@ $containerRunning = docker ps --filter "name=aether-postgres" --format "{{.Names
 if ($containerRunning -contains "aether-postgres") {
     Write-Host ">> Found running 'aether-postgres' Docker container." -ForegroundColor Green
     Write-Host ">> Executing pg_dump inside container..."
-    docker exec aether-postgres pg_dump -U aether -d aether --format=custom --no-owner --no-acl > $DumpFile
+    docker exec aether-postgres pg_dump -U aether -d aether --format=custom --no-owner --no-acl > "$DumpFile"
 } elseif (Get-Command pg_dump -ErrorAction SilentlyContinue) {
     Write-Host ">> Exporting via host pg_dump from localhost:5432..." -ForegroundColor Green
     $env:PGPASSWORD = if ($env:POSTGRES_PASSWORD) { $env:POSTGRES_PASSWORD } else { "aether_dev_password" }
@@ -39,7 +39,7 @@ if ($containerRunning -contains "aether-postgres") {
     $user = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { "aether" }
     $db = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { "aether" }
     
-    pg_dump -h $hostName -p $port -U $user -d $db --format=custom --no-owner --no-acl --file=$DumpFile
+    pg_dump -h $hostName -p $port -U $user -d $db --format=custom --no-owner --no-acl --file="$DumpFile"
 } else {
     Write-Error "Neither running 'aether-postgres' container nor host pg_dump was found."
     exit 1
@@ -54,3 +54,4 @@ Write-Host " File: $DumpFile ($([math]::Round($fileInfo.Length / 1MB, 2)) MB)"
 Write-Host " Latest Pointer: $LatestFile"
 Write-Host " Source Docker database untouched." -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
+

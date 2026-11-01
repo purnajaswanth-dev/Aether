@@ -22,10 +22,16 @@ if [[ ! -f "${DUMP_FILE}" ]]; then
     exit 1
 fi
 
+# Strip jdbc: prefix if present (libpq / pg_restore expects postgresql://)
+CLEAN_URL="${TARGET_URL#jdbc:}"
+
+# Mask credentials when displaying target host in logs/console
+MASKED_HOST=$(echo "${CLEAN_URL}" | sed -E 's/.*@([^:\/?]+).*/\1/' | sed -E 's/^postgres(ql)?:\/\///')
+
 echo "=========================================================="
 echo " Aether — Restore to Neon PostgreSQL"
 echo " Source Dump: ${DUMP_FILE}"
-echo " Target Neon Host: $(echo "${TARGET_URL}" | sed -E 's/.*@([^:\/]+).*/\1/')"
+echo " Target Neon Host: ${MASKED_HOST}"
 echo "=========================================================="
 echo ""
 echo "SAFETY WARNING:"
@@ -38,26 +44,38 @@ if [[ "${CONFIRMATION}" != "CONFIRM" ]]; then
     exit 0
 fi
 
+# Export separate credentials to PGPASSWORD / PGUSER if provided to handle special characters safely
+if [[ -n "${DB_PASSWORD:-}" ]]; then
+    export PGPASSWORD="${DB_PASSWORD}"
+fi
+if [[ -n "${DB_USERNAME:-}" ]]; then
+    export PGUSER="${DB_USERNAME}"
+fi
+
 echo ">> Restoring dump to Neon PostgreSQL..."
 
 if command -v pg_restore &> /dev/null; then
     pg_restore \
-        --dbname="${TARGET_URL}" \
+        --dbname="${CLEAN_URL}" \
         --no-owner \
         --no-acl \
         --verbose \
         "${DUMP_FILE}" || true
 else
-    # Fallback to docker run with postgres client if local pg_restore is absent
+    # Fallback to docker container postgres client
+    DUMP_DIR=$(cd "$(dirname "${DUMP_FILE}")" && pwd)
+    DUMP_NAME=$(basename "${DUMP_FILE}")
     docker run --rm \
-        -v "$(pwd)/$(dirname "${DUMP_FILE}")":/backup \
+        ${PGPASSWORD:+-e PGPASSWORD} \
+        ${PGUSER:+-e PGUSER} \
+        -v "${DUMP_DIR}":/backup \
         postgres:16 \
         pg_restore \
-        --dbname="${TARGET_URL}" \
+        --dbname="${CLEAN_URL}" \
         --no-owner \
         --no-acl \
         --verbose \
-        "/backup/$(basename "${DUMP_FILE}")" || true
+        "/backup/${DUMP_NAME}" || true
 fi
 
 echo "=========================================================="

@@ -21,7 +21,15 @@ if (!(Test-Path $DumpFile)) {
     exit 1
 }
 
-$maskedHost = if ($TargetUrl -match "@([^:\/]+)") { $matches[1] } else { "configured host" }
+# Strip jdbc: prefix if present for native libpq pg_restore compatibility
+$CleanUrl = $TargetUrl -replace '^jdbc:', ''
+
+# Extract masked host without leaking any embedded credentials to logs or console
+$maskedHost = if ($CleanUrl -match "@([^:\/?]+)") { 
+    $matches[1] 
+} else { 
+    $CleanUrl -replace '^postgres(ql)?:\/\/', '' -replace '[\/:?].*$', ''
+}
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " Aether — Restore to Neon PostgreSQL" -ForegroundColor Cyan
@@ -40,16 +48,28 @@ if ($confirmation -ne "CONFIRM") {
     exit 0
 }
 
+# Use PGPASSWORD / PGUSER environment variables so passwords with special characters are safely transmitted
+if ($env:DB_PASSWORD) {
+    $env:PGPASSWORD = $env:DB_PASSWORD
+}
+if ($env:DB_USERNAME) {
+    $env:PGUSER = $env:DB_USERNAME
+}
+
 Write-Host ">> Restoring dump to Neon PostgreSQL..." -ForegroundColor Green
 
 if (Get-Command pg_restore -ErrorAction SilentlyContinue) {
-    pg_restore --dbname=$TargetUrl --no-owner --no-acl --verbose $DumpFile
+    pg_restore --dbname="$CleanUrl" --no-owner --no-acl --verbose "$DumpFile"
 } else {
     $fullDumpPath = (Resolve-Path $DumpFile).Path
     $dumpDir = Split-Path -Parent $fullDumpPath
     $dumpName = Split-Path -Leaf $fullDumpPath
 
-    docker run --rm -v "${dumpDir}:/backup" postgres:16 pg_restore --dbname=$TargetUrl --no-owner --no-acl --verbose "/backup/$dumpName"
+    $dockerEnvArgs = @()
+    if ($env:PGPASSWORD) { $dockerEnvArgs += "-e", "PGPASSWORD=$($env:PGPASSWORD)" }
+    if ($env:PGUSER) { $dockerEnvArgs += "-e", "PGUSER=$($env:PGUSER)" }
+
+    docker run --rm $dockerEnvArgs -v "${dumpDir}:/backup" postgres:16 pg_restore --dbname="$CleanUrl" --no-owner --no-acl --verbose "/backup/$dumpName"
 }
 
 Write-Host "==========================================================" -ForegroundColor Cyan

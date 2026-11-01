@@ -95,3 +95,4 @@ Once verification passes:
    HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@...
    Started AetherApplication in ... seconds
    ```
+

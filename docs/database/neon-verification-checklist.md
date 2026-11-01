@@ -63,3 +63,4 @@ Use this checklist to track and verify the complete migration from Docker Postgr
 - [ ] Health check endpoint `GET /actuator/health` returns `{"status":"UP"}`.
 - [ ] MCP Server endpoint `POST /api/mcp` responds with valid JSON-RPC.
 - [ ] Frontend successfully authenticates against the backend on Neon.
+

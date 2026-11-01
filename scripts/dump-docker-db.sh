@@ -57,3 +57,4 @@ echo " File: ${DUMP_FILE} (${FILE_SIZE})"
 echo " Symlink/Copy: ${LATEST_LINK}"
 echo " Source Docker database untouched."
 echo "=========================================================="
+
