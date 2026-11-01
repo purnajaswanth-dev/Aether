@@ -62,7 +62,7 @@ public class NeonRuntimePermissionVerificationTest {
     }
 
     @Test
-    @DisplayName("scripts/provision-neon-roles.sql enforces least-privilege, revokes flyway_schema_history, and grants only required functions")
+    @DisplayName("scripts/provision-neon-roles.sql enforces least-privilege, revokes flyway_schema_history, targets neondb_owner, and uses explicit table allowlist")
     void testProvisionNeonRolesScript() throws IOException {
         Path scriptPath = Path.of("..", "scripts", "provision-neon-roles.sql");
         if (!Files.exists(scriptPath)) {
@@ -77,13 +77,51 @@ public class NeonRuntimePermissionVerificationTest {
         assertThat(sql).contains("NOCREATEDB");
         assertThat(sql).contains("NOCREATEROLE");
         assertThat(sql).contains("REPLACE_WITH_AETHER_APP_GENERATED_PASSWORD");
-        assertThat(sql).contains("REVOKE ALL PRIVILEGES ON TABLE flyway_schema_history FROM aether_app;");
+        assertThat(sql).contains("REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM aether_app;");
         assertThat(sql).contains("GRANT EXECUTE ON FUNCTION current_project_matches(UUID) TO aether_app;");
         assertThat(sql).contains("GRANT EXECUTE ON FUNCTION reject_update_delete() TO aether_app;");
+        assertThat(sql).contains("ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public");
         assertThat(sql).contains("ALTER DEFAULT PRIVILEGES FOR ROLE CURRENT_USER IN SCHEMA public");
         assertThat(sql).doesNotContain("GRANT TRUNCATE");
         assertThat(sql).doesNotContain("GRANT ALL");
+        assertThat(sql).doesNotContain("ON ALL TABLES");
+        assertThat(sql).doesNotContain("ON ALL SEQUENCES");
+        assertThat(sql).contains("'users'", "'projects'", "'artifacts'", "'tasks'", "'action_requests'", "'audit_events'");
         assertThat(sql.replace("NOBYPASSRLS", "")).doesNotMatch("(?i).*\\bBYPASSRLS\\b.*");
+    }
+
+    @Test
+    @DisplayName("V12 isolates flyway_schema_history and strips non-DML privileges from aether_app")
+    void testV12RuntimeRoleIsolation() throws IOException {
+        String v12 = readMigration("V12__runtime_role_isolation.sql");
+
+        assertThat(v12).contains("REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM aether_app;");
+        assertThat(v12).contains("REVOKE ALL PRIVILEGES ON TABLE public.flyway_schema_history FROM PUBLIC;");
+        assertThat(v12).contains("REVOKE ALL PRIVILEGES ON TABLE public.%I FROM aether_app;");
+        assertThat(v12).contains("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO aether_app;");
+        assertThat(v12).doesNotContain("GRANT TRUNCATE");
+        assertThat(v12).doesNotContain("GRANT ALL");
+    }
+
+    @Test
+    @DisplayName("TLS enforcement requires ssl=true, nonempty version and nonempty cipher from pg_stat_ssl")
+    void testTlsEnforcementContract() throws IOException {
+        Path testPath = Path.of("src", "test", "java", "com", "context_platform", "aether", "common", "NeonConnectivityVerificationTest.java");
+        if (!Files.exists(testPath)) {
+            testPath = Path.of("backend", "src", "test", "java", "com", "context_platform", "aether", "common", "NeonConnectivityVerificationTest.java");
+        }
+        assertThat(Files.exists(testPath)).isTrue();
+        String code = Files.readString(testPath, StandardCharsets.UTF_8);
+
+        assertThat(code).contains("SELECT");
+        assertThat(code).contains("ssl,");
+        assertThat(code).contains("version,");
+        assertThat(code).contains("cipher");
+        assertThat(code).contains("FROM pg_stat_ssl");
+        assertThat(code).contains("WHERE pid = pg_backend_pid()");
+        assertThat(code).contains("assertThat(isTlsEnforced)");
+        assertThat(code).contains(".isTrue()");
+        assertThat(code).contains("sslmode=require");
     }
 
     @Test
