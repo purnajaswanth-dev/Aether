@@ -1,22 +1,37 @@
 # ==============================================================================
-# Aether Backend - Production Multi-Stage Dockerfile
-# Base: Eclipse Temurin 17 LTS (Java 17)
-# Security: Non-root execution, hardened container JVM settings
+# Aether Unified Full-Stack Production Dockerfile
+# Stage 1: Build React SPA Frontend
+# Stage 2: Compile & Package Spring Boot Backend with embedded static resources
+# Stage 3: Minimal hardened runtime image (Eclipse Temurin 17 JRE)
 # ==============================================================================
 
-# Stage 1: Build the Spring Boot executable JAR
-FROM maven:3.9.6-eclipse-temurin-17-jammy AS builder
+# Stage 1: Build Frontend SPA
+FROM node:20-alpine AS frontend-builder
+WORKDIR /workspace/frontend
+
+COPY frontend/package*.json ./
+RUN npm ci
+
+COPY frontend ./
+RUN npm run build
+
+# Stage 2: Build Spring Boot executable JAR
+FROM maven:3.9.6-eclipse-temurin-17-jammy AS backend-builder
 WORKDIR /workspace
 
 # Cache dependencies
-COPY pom.xml .
+COPY backend/pom.xml ./pom.xml
 RUN mvn dependency:go-offline -B
 
 # Compile and package application
-COPY src ./src
+COPY backend/src ./src
+
+# Embed compiled React frontend assets into Spring Boot static resources directory
+COPY --from=frontend-builder /workspace/frontend/dist ./src/main/resources/static
+
 RUN mvn clean package -DskipTests -B
 
-# Stage 2: Minimal runtime image
+# Stage 3: Minimal runtime image
 FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 
@@ -33,7 +48,7 @@ RUN mkdir -p /app/data/artifacts /app/logs && \
     chown -R aether:aether /app
 
 # Copy application JAR from builder stage
-COPY --from=builder --chown=aether:aether /workspace/target/aether-backend-*.jar /app/app.jar
+COPY --from=backend-builder --chown=aether:aether /workspace/target/aether-backend-*.jar /app/app.jar
 
 # Switch to non-root user
 USER aether:aether
@@ -59,4 +74,3 @@ ENTRYPOINT ["java", \
     "-XX:+ExitOnOutOfMemoryError", \
     "-Djava.security.egd=file:/dev/./urandom", \
     "-jar", "/app/app.jar"]
-

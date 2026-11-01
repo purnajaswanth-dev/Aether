@@ -46,6 +46,13 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(
+                    "/",
+                    "/index.html",
+                    "/assets/**",
+                    "/vite.svg",
+                    "/*.ico",
+                    "/*.png",
+                    "/*.json",
                     "/api/v1/auth/**",
                     "/api/mcp/**",
                     "/api/webhooks/**",
@@ -55,6 +62,8 @@ public class SecurityConfig {
                     "/swagger-ui.html",
                     "/actuator/**"
                 ).permitAll()
+                .requestMatchers("/api/**").authenticated()
+                .requestMatchers(org.springframework.http.HttpMethod.GET, "/**").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
