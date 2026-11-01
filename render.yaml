@@ -67,4 +67,4 @@ services:
         fromService:
           type: web
           name: aether-backend
-          property: url
+          property: host
