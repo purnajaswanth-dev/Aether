@@ -16,7 +16,7 @@ COPY frontend ./
 RUN npm run build
 
 # Stage 2: Build Spring Boot executable JAR
-FROM maven:3.9.6-eclipse-temurin-17-jammy AS backend-builder
+FROM maven:3.9-eclipse-temurin-17 AS backend-builder
 WORKDIR /workspace
 
 # Cache dependencies
