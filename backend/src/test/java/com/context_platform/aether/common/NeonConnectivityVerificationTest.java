@@ -18,7 +18,7 @@ import java.util.*;
 
 public class NeonConnectivityVerificationTest {
 
-    private Path findEnvPath() {
+    private Optional<Path> findEnvPath() {
         List<Path> candidates = List.of(
                 Path.of(".env"),
                 Path.of("..", ".env"),
@@ -27,16 +27,13 @@ public class NeonConnectivityVerificationTest {
         );
         for (Path p : candidates) {
             if (Files.exists(p)) {
-                return p.toAbsolutePath().normalize();
+                return Optional.of(p.toAbsolutePath().normalize());
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     private Map<String, String> loadEnvSafely(Path envPath) throws IOException {
-        if (envPath == null) {
-            return Map.of();
-        }
         List<String> lines = Files.readAllLines(envPath, StandardCharsets.UTF_8);
         Map<String, String> map = new HashMap<>();
         for (String line : lines) {
@@ -60,15 +57,21 @@ public class NeonConnectivityVerificationTest {
     @Test
     @DisplayName("Verify direct read-only connectivity and TLS against Neon PostgreSQL")
     void testNeonConnectivityAndReadonlyMetadata() throws Exception {
-        Path envPath = findEnvPath();
-        Assumptions.assumeTrue(envPath != null, "Skipping live Neon test: no .env file found in project or parent directories (CI environment)");
+        Optional<Path> envPathOpt = findEnvPath();
+        Assumptions.assumeTrue(
+                envPathOpt.isPresent(),
+                "Skipping live Neon connectivity test: .env file not present in project root or parent directories"
+        );
 
-        Map<String, String> env = loadEnvSafely(envPath);
+        Map<String, String> env = loadEnvSafely(envPathOpt.get());
+
         String rawUrl = env.get("DB_URL");
         String username = env.get("DB_USERNAME");
         String password = env.get("DB_PASSWORD");
 
-        Assumptions.assumeTrue(rawUrl != null && !rawUrl.isBlank(), "Skipping live Neon test: DB_URL is missing in .env");
+        if (rawUrl == null || rawUrl.isBlank()) {
+            throw new IllegalArgumentException("DB_URL is missing in .env");
+        }
 
         // Test with raw URL first, and if channelBinding=require fails, test with channelBinding stripped
         List<String> urlVariants = new ArrayList<>();

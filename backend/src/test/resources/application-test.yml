@@ -14,6 +14,6 @@ aether:
     jwt:
       secret: 4f5bd5aethersecretkeyforphaseonefoundationsmustbe256bitslong!
       expiration-ms: 86400000
+    master-key: ${AETHER_MASTER_KEY:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
   storage:
     local-path: ./target/test-data/artifacts
-
