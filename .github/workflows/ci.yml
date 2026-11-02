@@ -38,8 +38,6 @@ jobs:
 
       - name: Run Backend Tests
         working-directory: backend
-        env:
-          SPRING_PROFILES_ACTIVE: test
         run: mvn clean verify
 
       - name: Print Test Failures

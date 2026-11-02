@@ -61,12 +61,18 @@ class ProductionCredentialEnforcementTest {
         );
     }
 
+    private SpringApplication createProdApp(Map<String, Object> properties) {
+        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setAdditionalProfiles("prod");
+        app.setDefaultProperties(properties);
+        return app;
+    }
+
     @Test
     @DisplayName("Production profile fails startup immediately when DB_URL is missing")
     void testProdFailsWhenDbUrlMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_USERNAME", "aether_app",
                 "DB_PASSWORD", "aether_app_pass",
@@ -84,9 +90,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when DB_USERNAME is missing")
     void testProdFailsWhenDbUsernameMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_PASSWORD", "aether_app_pass",
@@ -104,9 +108,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when DB_PASSWORD is missing")
     void testProdFailsWhenDbPasswordMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_app",
@@ -124,9 +126,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when MIGRATION_DB_USERNAME is missing")
     void testProdFailsWhenMigrationDbUsernameMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_app",
@@ -144,9 +144,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when MIGRATION_DB_PASSWORD is missing")
     void testProdFailsWhenMigrationDbPasswordMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_app",
@@ -164,9 +162,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when AETHER_JWT_SECRET is missing")
     void testProdFailsWhenJwtSecretMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_app",
@@ -184,9 +180,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile fails startup immediately when AETHER_MASTER_KEY is missing")
     void testProdFailsWhenMasterKeyMissing() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_app",
@@ -204,9 +198,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile rejects role collision when DB_USERNAME equals MIGRATION_DB_USERNAME")
     void testProdRejectsRoleCollision() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(Map.of(
+        SpringApplication app = createProdApp(Map.of(
                 "spring.profiles.active", "prod",
                 "DB_URL", "jdbc:postgresql://ep-xyz.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "neondb_owner",
@@ -225,9 +217,7 @@ class ProductionCredentialEnforcementTest {
     @Test
     @DisplayName("Production profile resolves separated runtime and migration identities")
     void testProdSucceedsWithSeparatedIdentities() {
-        SpringApplication app = new SpringApplication(MinimalTestConfig.class);
-        app.setWebApplicationType(WebApplicationType.NONE);
-        app.setDefaultProperties(validProdProperties());
+        SpringApplication app = createProdApp(validProdProperties());
 
         try (ConfigurableApplicationContext ctx = app.run()) {
             ConfigurableEnvironment env = ctx.getEnvironment();
