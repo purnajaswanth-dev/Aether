@@ -1,5 +1,6 @@
 package com.context_platform.aether.common;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -29,11 +30,13 @@ public class NeonConnectivityVerificationTest {
                 return p.toAbsolutePath().normalize();
             }
         }
-        throw new IllegalStateException("Could not find .env file in project root or parent directories");
+        return null;
     }
 
-    private Map<String, String> loadEnvSafely() throws IOException {
-        Path envPath = findEnvPath();
+    private Map<String, String> loadEnvSafely(Path envPath) throws IOException {
+        if (envPath == null) {
+            return Map.of();
+        }
         List<String> lines = Files.readAllLines(envPath, StandardCharsets.UTF_8);
         Map<String, String> map = new HashMap<>();
         for (String line : lines) {
@@ -57,15 +60,15 @@ public class NeonConnectivityVerificationTest {
     @Test
     @DisplayName("Verify direct read-only connectivity and TLS against Neon PostgreSQL")
     void testNeonConnectivityAndReadonlyMetadata() throws Exception {
-        Map<String, String> env = loadEnvSafely();
+        Path envPath = findEnvPath();
+        Assumptions.assumeTrue(envPath != null, "Skipping live Neon test: no .env file found in project or parent directories (CI environment)");
 
+        Map<String, String> env = loadEnvSafely(envPath);
         String rawUrl = env.get("DB_URL");
         String username = env.get("DB_USERNAME");
         String password = env.get("DB_PASSWORD");
 
-        if (rawUrl == null || rawUrl.isBlank()) {
-            throw new IllegalArgumentException("DB_URL is missing in .env");
-        }
+        Assumptions.assumeTrue(rawUrl != null && !rawUrl.isBlank(), "Skipping live Neon test: DB_URL is missing in .env");
 
         // Test with raw URL first, and if channelBinding=require fails, test with channelBinding stripped
         List<String> urlVariants = new ArrayList<>();
