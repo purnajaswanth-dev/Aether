@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/projects/{projectId}/workflow")
+@RequestMapping({"/api/v1/projects/{projectId}/workflow", "/api/projects/{projectId}/workflow"})
 public class WorkflowOverviewController {
 
     private final IntegrationHealthService healthService;

@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/projects/{projectId}/code-intel")
+@RequestMapping({"/api/v1/projects/{projectId}/code-intel", "/api/projects/{projectId}/code-intel"})
 public class CodeIntelligenceController {
 
     private final CodeIntelligenceService codeIntelligenceService;

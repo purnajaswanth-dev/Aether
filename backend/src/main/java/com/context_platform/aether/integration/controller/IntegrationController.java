@@ -1,6 +1,6 @@
 package com.context_platform.aether.integration.controller;
 
-import com.context_platform.aether.auth.User;
+import com.context_platform.aether.security.UserPrincipal;
 import com.context_platform.aether.integration.model.*;
 import com.context_platform.aether.integration.service.IntegrationService;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/projects/{projectId}/integrations")
+@RequestMapping({"/api/v1/projects/{projectId}/integrations", "/api/projects/{projectId}/integrations"})
 public class IntegrationController {
 
     private final IntegrationService integrationService;
@@ -29,27 +29,27 @@ public class IntegrationController {
     @GetMapping
     public ResponseEntity<List<IntegrationSummaryResponse>> listIntegrations(
         @PathVariable UUID projectId,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(integrationService.listIntegrations(projectId, user.id()));
+        return ResponseEntity.ok(integrationService.listIntegrations(projectId, principal != null ? principal.id() : null));
     }
 
     @PostMapping("/connect")
     public ResponseEntity<IntegrationHealth> connect(
         @PathVariable UUID projectId,
         @RequestBody ConnectIntegrationRequest request,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(integrationService.connectIntegration(projectId, request, user.id()));
+        return ResponseEntity.ok(integrationService.connectIntegration(projectId, request, principal != null ? principal.id() : null));
     }
 
     @PostMapping("/{provider}/disconnect")
     public ResponseEntity<Map<String, String>> disconnect(
         @PathVariable UUID projectId,
         @PathVariable ProviderType provider,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        integrationService.disconnectIntegration(projectId, provider, user.id());
+        integrationService.disconnectIntegration(projectId, provider, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("message", "Integration disconnected successfully"));
     }
 
@@ -57,9 +57,9 @@ public class IntegrationController {
     public ResponseEntity<Map<String, String>> pause(
         @PathVariable UUID projectId,
         @PathVariable ProviderType provider,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        integrationService.pauseIntegration(projectId, provider, user.id());
+        integrationService.pauseIntegration(projectId, provider, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("message", "Integration paused"));
     }
 
@@ -67,9 +67,9 @@ public class IntegrationController {
     public ResponseEntity<Map<String, String>> resume(
         @PathVariable UUID projectId,
         @PathVariable ProviderType provider,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        integrationService.resumeIntegration(projectId, provider, user.id());
+        integrationService.resumeIntegration(projectId, provider, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("message", "Integration resumed"));
     }
 
@@ -77,26 +77,26 @@ public class IntegrationController {
     public ResponseEntity<IntegrationHealth> sync(
         @PathVariable UUID projectId,
         @PathVariable ProviderType provider,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(integrationService.triggerSync(projectId, provider, user.id()));
+        return ResponseEntity.ok(integrationService.triggerSync(projectId, provider, principal != null ? principal.id() : null));
     }
 
     @GetMapping("/dead-letter")
     public ResponseEntity<List<DeadLetterEventRecord>> listDeadLetter(
         @PathVariable UUID projectId,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(integrationService.listDeadLetterEvents(projectId, user.id()));
+        return ResponseEntity.ok(integrationService.listDeadLetterEvents(projectId, principal != null ? principal.id() : null));
     }
 
     @PostMapping("/dead-letter/{dlqId}/retry")
     public ResponseEntity<Map<String, String>> retryDeadLetter(
         @PathVariable UUID projectId,
         @PathVariable UUID dlqId,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        integrationService.retryDeadLetterEvent(projectId, dlqId, user.id());
+        integrationService.retryDeadLetterEvent(projectId, dlqId, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("message", "Dead letter event retried successfully"));
     }
 
@@ -104,9 +104,9 @@ public class IntegrationController {
     public ResponseEntity<Map<String, String>> discardDeadLetter(
         @PathVariable UUID projectId,
         @PathVariable UUID dlqId,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        integrationService.discardDeadLetterEvent(projectId, dlqId, user.id());
+        integrationService.discardDeadLetterEvent(projectId, dlqId, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("message", "Dead letter event discarded"));
     }
 
@@ -114,27 +114,27 @@ public class IntegrationController {
     public ResponseEntity<List<DeploymentRecord>> listDeployments(
         @PathVariable UUID projectId,
         @RequestParam(defaultValue = "50") int limit,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.ok(integrationService.listDeployments(projectId, limit, user.id()));
+        return ResponseEntity.ok(integrationService.listDeployments(projectId, limit, principal != null ? principal.id() : null));
     }
 
     @GetMapping("/deployments/latest")
     public ResponseEntity<DeploymentRecord> getLatestDeployment(
         @PathVariable UUID projectId,
         @RequestParam(required = false) String environment,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.of(integrationService.getLatestDeployment(projectId, environment, user.id()));
+        return ResponseEntity.of(integrationService.getLatestDeployment(projectId, environment, principal != null ? principal.id() : null));
     }
 
     @GetMapping("/deployments/{deploymentId}")
     public ResponseEntity<DeploymentRecord> getDeployment(
         @PathVariable UUID projectId,
         @PathVariable UUID deploymentId,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        return ResponseEntity.of(integrationService.getDeployment(projectId, deploymentId, user.id()));
+        return ResponseEntity.of(integrationService.getDeployment(projectId, deploymentId, principal != null ? principal.id() : null));
     }
 
     @GetMapping("/deployments/{externalDeployId}/logs")
@@ -142,9 +142,9 @@ public class IntegrationController {
         @PathVariable UUID projectId,
         @PathVariable String externalDeployId,
         @RequestParam(defaultValue = "100") int tailLines,
-        @AuthenticationPrincipal User user
+        @AuthenticationPrincipal UserPrincipal principal
     ) {
-        String logs = integrationService.getDeploymentLogs(projectId, externalDeployId, tailLines, user.id());
+        String logs = integrationService.getDeploymentLogs(projectId, externalDeployId, tailLines, principal != null ? principal.id() : null);
         return ResponseEntity.ok(Map.of("deployId", externalDeployId, "logs", logs));
     }
 }
