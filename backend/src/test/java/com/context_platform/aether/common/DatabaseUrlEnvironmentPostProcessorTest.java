@@ -15,15 +15,22 @@ class DatabaseUrlEnvironmentPostProcessorTest {
 
     private final DatabaseUrlEnvironmentPostProcessor processor = new DatabaseUrlEnvironmentPostProcessor();
 
+    private ConfigurableEnvironment createEnvironment(Map<String, Object> properties) {
+        StandardEnvironment env = new StandardEnvironment();
+        env.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+        env.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+        env.getPropertySources().addFirst(new MapPropertySource("testSource", properties));
+        return env;
+    }
+
     @Test
     @DisplayName("Normalizes DB_URL, DB_USERNAME, DB_PASSWORD environment variables for Neon")
     void testNormalizeNeonDbEnvironmentVariables() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "DB_URL", "jdbc:postgresql://ep-silent-moon-123456.us-east-2.aws.neon.tech:5432/neondb?sslmode=require",
                 "DB_USERNAME", "aether_neon_user",
                 "DB_PASSWORD", "neon_secure_password_987"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
@@ -36,10 +43,9 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     @Test
     @DisplayName("Automatically appends sslmode=require if connecting to a Neon host without TLS parameter")
     void testEnforceTlsForNeonEndpoints() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "DB_URL", "postgresql://neon_admin:pass123@ep-cool-pooler.us-east-2.aws.neon.tech/neondb"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
@@ -52,12 +58,11 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     @Test
     @DisplayName("Supports Neon pooled connection endpoint with separate DB_USERNAME and DB_PASSWORD")
     void testNeonPooledConnectionWithExplicitCredentials() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "DB_URL", "jdbc:postgresql://ep-fragrant-pond-a5b6c7-pooler.us-east-2.aws.neon.tech:5432/neondb",
                 "DB_USERNAME", "pooler_user",
                 "DB_PASSWORD", "pooler_secret"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
@@ -71,10 +76,9 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     @Test
     @DisplayName("Normalizes Render/Heroku postgresql:// URL with user and password")
     void testNormalizeRenderPostgresqlUrl() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "DATABASE_URL", "postgresql://aether_user:secret_pass@dpg-c123456789-a.oregon-postgres.render.com:5432/aether_prod_db"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
@@ -87,10 +91,9 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     @Test
     @DisplayName("Normalizes postgres:// scheme with query parameters like sslmode")
     void testNormalizePostgresSchemeWithParams() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "SPRING_DATASOURCE_URL", "postgres://db_admin:strong_pass@postgres-host:5432/production?sslmode=require"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 
@@ -103,10 +106,9 @@ class DatabaseUrlEnvironmentPostProcessorTest {
     @Test
     @DisplayName("Does not modify existing standard jdbc:postgresql:// URL for local Docker")
     void testPassThroughStandardJdbcUrl() {
-        ConfigurableEnvironment env = new StandardEnvironment();
-        env.getPropertySources().addFirst(new MapPropertySource("testSource", Map.of(
+        ConfigurableEnvironment env = createEnvironment(Map.of(
                 "SPRING_DATASOURCE_URL", "jdbc:postgresql://localhost:5432/aether"
-        )));
+        ));
 
         processor.postProcessEnvironment(env, new SpringApplication());
 

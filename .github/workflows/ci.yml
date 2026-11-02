@@ -40,14 +40,19 @@ jobs:
         working-directory: backend
         env:
           SPRING_PROFILES_ACTIVE: test
-          DB_URL: jdbc:postgresql://localhost:5432/aether
-          DB_USERNAME: aether
-          DB_PASSWORD: aether_dev_password
-          MIGRATION_DB_USERNAME: aether
-          MIGRATION_DB_PASSWORD: aether_dev_password
-          AETHER_JWT_SECRET: 4f5bd5aethersecretkeyforphaseonefoundationsmustbe256bitslong!
-          AETHER_MASTER_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: mvn clean verify
+
+      - name: Print Test Failures
+        if: failure()
+        run: |
+          for f in backend/target/surefire-reports/*.txt; do
+            if grep -E -q "FAILURE|ERROR" "$f"; then
+              echo "============================================================"
+              echo "Report: $f"
+              echo "============================================================"
+              cat "$f"
+            fi
+          done
 
       - name: Upload Surefire Test Reports
         if: always()
