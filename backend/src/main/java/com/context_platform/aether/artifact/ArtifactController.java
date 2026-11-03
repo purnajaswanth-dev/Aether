@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects/{projectId}/artifacts")
+@RequestMapping({"/api/v1/projects/{projectId}/artifacts", "/api/projects/{projectId}/artifacts"})
 @Tag(name = "Artifacts", description = "Endpoints for managing immutable, append-only engineering artifacts and version history")
 public class ArtifactController {
 

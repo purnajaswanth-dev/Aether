@@ -57,6 +57,7 @@ public class SecurityConfig {
                     "/*.png",
                     "/*.json",
                     "/api/v1/auth/**",
+                    "/api/auth/**",
                     "/api/mcp/**",
                     "/api/webhooks/**",
                     "/api/agent/**",

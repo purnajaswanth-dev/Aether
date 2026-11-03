@@ -105,5 +105,31 @@ public class AuthAndProjectServiceTest extends BaseTest {
             projectService.getProject(p1.id(), user2.user().id());
         }).isInstanceOf(ProjectAccessDeniedException.class);
     }
+
+    @Test
+    @DisplayName("Project listing converts SQL Timestamp to Instant without ClassCastException")
+    void testListProjectsTimestampToInstantConversion() {
+        rlsContextHelper.setBypassRls(true);
+
+        String email = "list_tester_" + UUID.randomUUID() + "@team.com";
+        AuthResponse user = authService.register(
+            new RegisterRequest(email, "SecurePassword123!", "List Tester"),
+            "127.0.0.1", "JUnit"
+        );
+
+        ProjectResponse p = projectService.createProject(
+            new CreateProjectRequest("Project Alpha", "Description", "Web", List.of("React", "Spring Boot"), null, "LOCAL_FIRST"),
+            user.user().id(),
+            user.user().email()
+        );
+
+        List<ProjectResponse> projects = projectService.listProjects(user.user().id());
+        assertThat(projects).isNotEmpty();
+        ProjectResponse fetched = projects.stream().filter(pr -> pr.id().equals(p.id())).findFirst().orElseThrow();
+        assertThat(fetched.name()).isEqualTo("Project Alpha");
+        assertThat(fetched.createdAt()).isNotNull();
+        assertThat(fetched.updatedAt()).isNotNull();
+        assertThat(fetched.currentUserRole()).isEqualTo("OWNER");
+    }
 }
 

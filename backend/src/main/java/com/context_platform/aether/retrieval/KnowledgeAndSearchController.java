@@ -31,7 +31,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects/{projectId}")
+@RequestMapping({"/api/v1/projects/{projectId}", "/api/projects/{projectId}"})
 public class KnowledgeAndSearchController {
 
     private final HybridRetrievalEngine retrievalEngine;

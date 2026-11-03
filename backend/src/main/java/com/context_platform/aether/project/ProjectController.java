@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects")
+@RequestMapping({"/api/v1/projects", "/api/projects"})
 @Tag(name = "Projects", description = "Endpoints for managing engineering projects and workspace configurations")
 public class ProjectController {
 

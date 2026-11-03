@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects/{projectId}")
+@RequestMapping({"/api/v1/projects/{projectId}", "/api/projects/{projectId}"})
 @Tag(name = "Data Management", description = "Endpoints for project data archive export and cascading deletion")
 public class DataManagementController {
 

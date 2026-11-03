@@ -7,8 +7,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -155,7 +160,7 @@ public class ProjectRepository {
     public List<ProjectResponse> listByUser(UUID userId) {
         rlsContextHelper.setBypassRls(true);
         try {
-            List<Map<String, Object>> rows = jdbcClient.sql("""
+            return jdbcClient.sql("""
                 SELECT p.id, p.public_id, p.name, p.description, p.project_type, p.tech_stack::text as tech_stack,
                        p.directory, p.storage_preference, p.archived, p.created_at, p.updated_at, pm.role as user_role
                 FROM projects p
@@ -164,32 +169,55 @@ public class ProjectRepository {
                 ORDER BY p.created_at DESC
             """)
             .param(userId)
-            .query()
-            .listOfRows();
-
-            List<ProjectResponse> result = new ArrayList<>();
-            for (Map<String, Object> r : rows) {
-                String tsJson = (String) r.get("tech_stack");
+            .query((rs, rowNum) -> {
+                String tsJson = rs.getString("tech_stack");
                 List<String> techStack = deserializeJsonList(tsJson);
-                result.add(new ProjectResponse(
-                    (UUID) r.get("id"),
-                    (String) r.get("public_id"),
-                    (String) r.get("name"),
-                    (String) r.get("description"),
-                    (String) r.get("project_type"),
+                Instant createdAt = toInstant(rs.getObject("created_at"));
+                Instant updatedAt = toInstant(rs.getObject("updated_at"));
+                return new ProjectResponse(
+                    rs.getObject("id", UUID.class),
+                    rs.getString("public_id"),
+                    rs.getString("name"),
+                    rs.getString("description"),
+                    rs.getString("project_type"),
                     techStack,
-                    (String) r.get("directory"),
-                    (String) r.get("storage_preference"),
-                    (Boolean) r.get("archived"),
-                    (String) r.get("user_role"),
-                    (Instant) r.get("created_at"),
-                    (Instant) r.get("updated_at")
-                ));
-            }
-            return result;
+                    rs.getString("directory"),
+                    rs.getString("storage_preference"),
+                    rs.getBoolean("archived"),
+                    rs.getString("user_role"),
+                    createdAt,
+                    updatedAt
+                );
+            })
+            .list();
         } finally {
             rlsContextHelper.setBypassRls(false);
         }
+    }
+
+    private Instant toInstant(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        if (value instanceof Timestamp ts) {
+            return ts.toInstant();
+        }
+        if (value instanceof OffsetDateTime odt) {
+            return odt.toInstant();
+        }
+        if (value instanceof LocalDateTime ldt) {
+            return ldt.toInstant(ZoneOffset.UTC);
+        }
+        if (value instanceof Date d) {
+            return d.toInstant();
+        }
+        if (value instanceof Number n) {
+            return Instant.ofEpochMilli(n.longValue());
+        }
+        return Instant.parse(value.toString());
     }
 
     public void updateProject(UUID projectId, String name, String description, String projectType, List<String> techStack, String directory, String storagePreference) {

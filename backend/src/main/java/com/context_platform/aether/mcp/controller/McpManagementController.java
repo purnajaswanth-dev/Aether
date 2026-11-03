@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects/{projectId}/integrations/mcp")
+@RequestMapping({"/api/v1/projects/{projectId}/integrations/mcp", "/api/projects/{projectId}/integrations/mcp"})
 @Tag(name = "MCP Management", description = "Endpoints for managing MCP connection tokens, activity logs, and client configurations")
 public class McpManagementController {
 

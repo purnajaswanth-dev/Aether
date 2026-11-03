@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/projects/{projectId}/decisions")
+@RequestMapping({"/api/v1/projects/{projectId}/decisions", "/api/projects/{projectId}/decisions"})
 @Tag(name = "Technical Decisions", description = "Endpoints for proposing, reviewing, approving and comparing architectural decisions")
 public class DecisionController {
 
