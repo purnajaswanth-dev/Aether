@@ -73,7 +73,7 @@ public class ProjectController {
         return ResponseEntity.ok().build();
     }
 
-    @GetMapping("/{projectId}/integrations")
+    @GetMapping("/{projectId}/integrations-catalogue")
     @Operation(summary = "Get integrations catalogue with honest connection statuses and planned capabilities")
     public ResponseEntity<List<IntegrationStatusDto>> getIntegrations(
         @PathVariable UUID projectId,
